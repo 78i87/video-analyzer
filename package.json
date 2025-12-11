@@ -1,0 +1,22 @@
+{
+  "name": "video-analyzer",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "test": "bun test",
+    "lint": "bun test --filter never"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "zod": "^4.1.13"
+  },
+  "engines": {
+    "bun": ">=1.1.3"
+  }
+}
