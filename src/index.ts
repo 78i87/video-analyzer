@@ -1,10 +1,19 @@
 import { loadConfig } from "./config";
 import { OpenRouterClient } from "./openrouterClient";
-import { runAgent, type AgentPersona } from "./agentRunner";
+import { runAgent, type AgentPersona, viewerTools } from "./agentRunner";
 import { segmentVideo } from "./videoSegmenter";
+import { logger, setLogLevel } from "./logger";
 
 export async function buildSimulation(videoPath: string) {
   const config = loadConfig();
+  setLogLevel(config.logLevel);
+
+  logger.info(
+    `Config: model=${config.openrouterModel} agents=${config.agentCount} interval=${config.segmentIntervalSeconds}s`,
+  );
+  logger.debug(
+    `Binaries: ffmpeg=${config.ffmpegBin} ffprobe=${config.ffprobeBin} whisper=${config.whisperBin ?? "(unset)"}`,
+  );
 
   const segments = await segmentVideo(videoPath, {
     ffmpegBin: config.ffmpegBin,
@@ -13,7 +22,12 @@ export async function buildSimulation(videoPath: string) {
     frameDir: config.frameDir,
     audioDir: config.audioDir,
     segmentIntervalSeconds: config.segmentIntervalSeconds,
+    whisperArgs: config.whisperArgs,
   });
+
+  if (segments.length === 0) {
+    logger.warn("Segments prepared: 0");
+  }
 
   const client = new OpenRouterClient(config.openrouterApiKey, config.openrouterModel);
 
@@ -27,7 +41,7 @@ export async function buildSimulation(videoPath: string) {
 
   // Run agents sequentially for now; parallel orchestration will be added with real streaming
   const results = await Promise.all(
-    personas.map((persona) => runAgent(persona, segments, { client, tools: [] })),
+    personas.map((persona) => runAgent(persona, segments, { client, tools: viewerTools })),
   );
 
   return {

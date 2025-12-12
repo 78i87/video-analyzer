@@ -11,7 +11,13 @@ export type OpenRouterMessage = {
   type: "message";
   role: "user" | "assistant" | "tool" | "system";
   content: Array<{
-    type: "input_text" | "output_text";
+    type: "input_text";
+    text: string;
+  } | {
+    type: "input_image";
+    image_url: string;
+  } | {
+    type: "output_text";
     text: string;
   }>;
 };

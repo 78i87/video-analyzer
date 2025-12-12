@@ -5,7 +5,9 @@ import { z } from "zod";
 export type AppConfig = {
   openrouterApiKey: string;
   openrouterModel: string;
+  logLevel: string;
   whisperBin?: string;
+  whisperArgs?: string;
   ffmpegBin: string;
   ffprobeBin: string;
   segmentIntervalSeconds: number;
@@ -22,10 +24,12 @@ const envSchema = z.object({
     .string()
     .trim()
     .default("mistralai/mistral-small-3.1-24b-instruct:free"),
+  LOG_LEVEL: z.string().trim().default("info"),
   WHISPER_BIN: z.string().trim().optional(),
+  WHISPER_ARGS: z.string().trim().optional(),
   FFMPEG_BIN: z.string().trim().default("ffmpeg"),
   FFMPEG_PROBE_BIN: z.string().trim().default("ffprobe"),
-  SEGMENT_INTERVAL_SECONDS: z.coerce.number().positive().default(8),
+  SEGMENT_INTERVAL_SECONDS: z.coerce.number().positive().default(1),
   FRAME_DIR: z.string().trim().default("data/frames"),
   AUDIO_DIR: z.string().trim().default("data/audio"),
   AGENT_COUNT: z.coerce.number().int().positive().default(5),
@@ -55,7 +59,9 @@ export function loadConfig(cwd = process.cwd()): AppConfig {
   return {
     openrouterApiKey: env.OPENROUTER_API_KEY,
     openrouterModel: env.OPENROUTER_MODEL,
+    logLevel: env.LOG_LEVEL,
     whisperBin: env.WHISPER_BIN,
+    whisperArgs: env.WHISPER_ARGS,
     ffmpegBin: env.FFMPEG_BIN,
     ffprobeBin: env.FFMPEG_PROBE_BIN,
     segmentIntervalSeconds: env.SEGMENT_INTERVAL_SECONDS,

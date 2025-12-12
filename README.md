@@ -15,12 +15,15 @@ cp env.example .env    # fill in OPENROUTER_API_KEY
 bun start /path/to/video.mp4
 ```
 
-Bun automatically loads `.env`. The CLI currently wires config, stubs segmentation, and agent scaffolding; the heavy lifting will be filled in next.
+Bun automatically loads `.env`.
+Segmentation extracts a single JPEG frame every `SEGMENT_INTERVAL_SECONDS` (default: 1). No audio is extracted; if `WHISPER_BIN` is set, the segment `subtitle` field is populated via Whisper JSON output.
 
 ## Tests
 
 ```bash
 bun test
+# If you see failures loading "tests/._*.ts" on macOS/external drives:
+bun run test
 ```
 
 ## Key files
