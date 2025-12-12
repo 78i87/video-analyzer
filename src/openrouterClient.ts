@@ -7,20 +7,39 @@ export type ToolDefinition = {
   };
 };
 
-export type OpenRouterMessage = {
-  type: "message";
+export type ChatMessage = {
   role: "user" | "assistant" | "tool" | "system";
-  content: Array<{
-    type: "input_text";
-    text: string;
-  } | {
-    type: "input_image";
-    image_url: string;
-  } | {
-    type: "output_text";
-    text: string;
-  }>;
+  content:
+    | string
+    | Array<
+        | {
+            type: "text";
+            text: string;
+          }
+        | {
+            type: "image_url";
+            image_url: { url: string; detail?: "auto" | "high" | "low" };
+          }
+      >;
 };
+
+function messagesIncludeImage(messages: ChatMessage[]) {
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (part.type === "image_url") return true;
+    }
+  }
+  return false;
+}
+
+function tryParseJson(text: string): unknown | undefined {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
 
 export type FunctionCallEvent = {
   id?: string;
@@ -37,7 +56,7 @@ export type StreamCallbacks = {
 };
 
 export type StreamOptions = {
-  messages: OpenRouterMessage[];
+  messages: ChatMessage[];
   tools: ToolDefinition[];
   toolChoice?: "auto" | { type: "function"; function: { name: string } } | "none";
   maxOutputTokens?: number;
@@ -59,14 +78,14 @@ export class OpenRouterClient {
   async streamToolCalls(options: StreamOptions) {
     const body = {
       model: this.model,
-      input: options.messages,
+      messages: options.messages,
       tools: options.tools,
       tool_choice: options.toolChoice ?? "auto",
       stream: true,
-      max_output_tokens: options.maxOutputTokens,
+      max_tokens: options.maxOutputTokens,
     };
 
-    const response = await fetch(`${this.baseUrl}/api/v1/responses`, {
+    const response = await fetch(`${this.baseUrl}/api/v1/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -78,6 +97,30 @@ export class OpenRouterClient {
 
     if (!response.ok) {
       const text = await response.text();
+      const hasImage = messagesIncludeImage(options.messages);
+      const parsed = tryParseJson(text);
+      const errorMessage =
+        typeof parsed === "object" &&
+        parsed !== null &&
+        typeof (parsed as { error?: unknown }).error === "object" &&
+        (parsed as { error?: { message?: unknown } }).error !== null &&
+        typeof (parsed as { error?: { message?: unknown } }).error?.message === "string"
+          ? (parsed as { error: { message: string } }).error.message
+          : undefined;
+
+      if (
+        response.status === 404 &&
+        hasImage &&
+        errorMessage &&
+        errorMessage.toLowerCase().includes("support image input")
+      ) {
+        throw new Error(
+          `OpenRouter model "${this.model}" does not support image input.\n` +
+            `Set OPENROUTER_MODEL to a vision-capable model (for example: "openai/gpt-4o-mini" or "google/gemini-1.5-flash") and retry.\n\n` +
+            `OpenRouter error: ${errorMessage}`,
+        );
+      }
+
       throw new Error(
         `OpenRouter request failed: ${response.status} ${response.statusText} - ${text}`,
       );
@@ -117,29 +160,43 @@ export class OpenRouterClient {
 
         options.callbacks?.onEvent?.(parsed);
 
-        if (
+        const choice =
           typeof parsed === "object" &&
           parsed !== null &&
-          (parsed as { type?: string }).type === "response.output_item.added"
-        ) {
-          const item = (parsed as { item?: { type?: string; id?: string; call_id?: string; name?: string; arguments?: string } }).item;
-          if (item?.type === "function_call" && item.name) {
-            options.callbacks?.onFunctionCall?.({
-              id: item.id,
-              name: item.name,
-              arguments: item.arguments ?? "",
-              callId: item.call_id,
-              raw: parsed,
-            });
-          }
+          Array.isArray((parsed as { choices?: unknown }).choices)
+            ? (parsed as { choices: Array<{ delta?: unknown; finish_reason?: unknown }> }).choices[0]
+            : undefined;
+
+        const delta =
+          choice &&
+          typeof choice.delta === "object" &&
+          choice.delta !== null
+            ? (choice.delta as {
+                tool_calls?: Array<{
+                  id?: string;
+                  type?: string;
+                  function?: { name?: string; arguments?: string };
+                }>;
+              })
+            : undefined;
+
+        const toolCalls = delta?.tool_calls ?? [];
+        for (const toolCall of toolCalls) {
+          const name = toolCall.function?.name;
+          if (!name) continue;
+          options.callbacks?.onFunctionCall?.({
+            id: toolCall.id,
+            callId: toolCall.id,
+            name,
+            arguments: toolCall.function?.arguments ?? "",
+            raw: parsed,
+          });
         }
 
-        if (
-          typeof parsed === "object" &&
-          parsed !== null &&
-          (parsed as { type?: string }).type === "response.function_call_arguments.done"
-        ) {
-          const args = (parsed as { arguments?: string }).arguments ?? "";
+        const finishReason =
+          choice && typeof choice.finish_reason === "string" ? choice.finish_reason : undefined;
+        if (finishReason === "tool_calls") {
+          const args = toolCalls.map((t) => t.function?.arguments ?? "").join("");
           options.callbacks?.onArgumentsDone?.(args);
         }
       }

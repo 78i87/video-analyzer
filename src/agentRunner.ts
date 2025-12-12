@@ -1,5 +1,5 @@
 import type { Segment } from "./videoSegmenter";
-import type { OpenRouterClient, ToolDefinition } from "./openrouterClient";
+import type { ChatMessage, OpenRouterClient, ToolDefinition } from "./openrouterClient";
 import { logger } from "./logger";
 import { Buffer } from "node:buffer";
 
@@ -127,30 +127,23 @@ export async function runAgent(
     const segment = segments[i]!;
     const imageUrl = await readJpegDataUrl(segment.framePath);
 
-    const input = [
+    const input: ChatMessage[] = [
       {
-        type: "message" as const,
         role: "system" as const,
-        content: [
-          {
-            type: "input_text" as const,
-            text:
-              `${persona.systemPrompt}\n\n` +
-              "You will be shown 1 FPS video frames. " +
-              "If a subtitle/transcript is provided, you may use it. " +
-              'After each frame, call exactly one tool: "keep_playing" or "quit_video".',
-          },
-        ],
+        content:
+          `${persona.systemPrompt}\n\n` +
+          "You will be shown 1 FPS video frames. " +
+          "If a subtitle/transcript is provided, you may use it. " +
+          'After each frame, call exactly one tool: "keep_playing" or "quit_video".',
       },
       {
-        type: "message" as const,
         role: "user" as const,
         content: [
-          { type: "input_image" as const, image_url: imageUrl },
+          { type: "image_url" as const, image_url: { url: imageUrl } },
           ...(segment.subtitle.trim()
             ? [
                 {
-                  type: "input_text" as const,
+                  type: "text" as const,
                   text: `Subtitle: ${segment.subtitle.trim()}`,
                 },
               ]
