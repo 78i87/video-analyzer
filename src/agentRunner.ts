@@ -1,5 +1,6 @@
 import type { Segment } from "./videoSegmenter";
 import type { ChatMessage, OpenRouterClient, ToolDefinition } from "./openrouterClient";
+import type { AgentOutputRecorder } from "./agentOutputRecorder";
 import { logger } from "./logger";
 import { Buffer } from "node:buffer";
 
@@ -73,6 +74,8 @@ export type AgentRunnerDeps = {
   client: OpenRouterClient;
   tools: ToolDefinition[];
   logModelOutput?: boolean;
+  outputRecorder?: AgentOutputRecorder;
+  runId?: string;
   reporter?: AgentRunReporter;
   suppressSegmentLogs?: boolean;
 };
@@ -252,6 +255,31 @@ export async function runAgent(
 
     const result = applyDoubleQuitRule(state, tool, segment.index);
     state = result.state;
+
+    const runId = deps.runId;
+    if (runId && deps.outputRecorder) {
+      void deps.outputRecorder
+        .record({
+          type: "segment",
+          ts: new Date().toISOString(),
+          runId,
+          agentId: persona.id,
+          segmentIndex: segment.index,
+          framePath: segment.framePath,
+          subtitle: segment.subtitle,
+          modelTool: tool,
+          coercedTool: result.coercedTool,
+          decision: result.decision,
+          finishReason: finishReason ?? null,
+          assistantText: assistantText,
+          sawToolCallDelta,
+        })
+        .catch((err) => {
+          logger.warn(
+            `Failed to write agent output log for ${persona.id} segment=${segment.index}: ${String(err)}`,
+          );
+        });
+    }
 
     deps.reporter?.onSegment?.({
       agentId: persona.id,

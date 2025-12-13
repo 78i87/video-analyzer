@@ -7,6 +7,8 @@ export type AppConfig = {
   openrouterModel: string;
   logLevel: string;
   logModelOutput: boolean;
+  agentOutputLog: boolean;
+  agentOutputLogDir: string;
   progressUi: boolean;
   whisperBin?: string;
   whisperArgs?: string;
@@ -36,6 +38,8 @@ const envSchema = z.object({
     .default("z-ai/glm-4.6v"),
   LOG_LEVEL: z.string().trim().default("info"),
   LOG_MODEL_OUTPUT: z.string().optional(),
+  AGENT_OUTPUT_LOG: z.string().optional(),
+  AGENT_OUTPUT_LOG_DIR: z.string().trim().default("data/agent-logs"),
   PROGRESS_UI: z.string().optional(),
   WHISPER_BIN: z.string().trim().optional(),
   WHISPER_ARGS: z.string().trim().optional(),
@@ -62,8 +66,14 @@ export function loadConfig(cwd = process.cwd()): AppConfig {
   }
 
   const env = parsed.data;
+  const logModelOutput = parseBoolEnv(env.LOG_MODEL_OUTPUT, "LOG_MODEL_OUTPUT");
+  const agentOutputLog =
+    env.AGENT_OUTPUT_LOG === undefined ?
+      logModelOutput
+    : parseBoolEnv(env.AGENT_OUTPUT_LOG, "AGENT_OUTPUT_LOG");
   const frameDir = resolve(cwd, env.FRAME_DIR);
   const audioDir = resolve(cwd, env.AUDIO_DIR);
+  const agentOutputLogDir = resolve(cwd, env.AGENT_OUTPUT_LOG_DIR);
   const progressUi =
     env.PROGRESS_UI === undefined ?
       Boolean((process.stderr as { isTTY?: boolean }).isTTY)
@@ -71,12 +81,15 @@ export function loadConfig(cwd = process.cwd()): AppConfig {
 
   ensureDir(frameDir);
   ensureDir(audioDir);
+  if (agentOutputLog) ensureDir(agentOutputLogDir);
 
   return {
     openrouterApiKey: env.OPENROUTER_API_KEY,
     openrouterModel: env.OPENROUTER_MODEL,
     logLevel: env.LOG_LEVEL,
-    logModelOutput: parseBoolEnv(env.LOG_MODEL_OUTPUT, "LOG_MODEL_OUTPUT"),
+    logModelOutput,
+    agentOutputLog,
+    agentOutputLogDir,
     progressUi,
     whisperBin: env.WHISPER_BIN,
     whisperArgs: env.WHISPER_ARGS,
