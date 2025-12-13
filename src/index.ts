@@ -11,6 +11,9 @@ export async function buildSimulation(videoPath: string) {
   logger.info(
     `Config: model=${config.openrouterModel} agents=${config.agentCount} interval=${config.segmentIntervalSeconds}s`,
   );
+  if (config.logModelOutput) {
+    logger.info("Model output logging: enabled");
+  }
   logger.debug(
     `Binaries: ffmpeg=${config.ffmpegBin} ffprobe=${config.ffprobeBin} whisper=${config.whisperBin ?? "(unset)"}`,
   );
@@ -41,7 +44,13 @@ export async function buildSimulation(videoPath: string) {
 
   // Run agents sequentially for now; parallel orchestration will be added with real streaming
   const results = await Promise.all(
-    personas.map((persona) => runAgent(persona, segments, { client, tools: viewerTools })),
+    personas.map((persona) =>
+      runAgent(persona, segments, {
+        client,
+        tools: viewerTools,
+        logModelOutput: config.logModelOutput,
+      }),
+    ),
   );
 
   return {

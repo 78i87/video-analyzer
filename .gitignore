@@ -174,3 +174,7 @@ dist
 # Finder (MacOS) folder config
 .DS_Store
 ._*
+
+# Generated artifacts
+data/
+*.mp4

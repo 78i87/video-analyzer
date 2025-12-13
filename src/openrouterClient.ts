@@ -52,6 +52,8 @@ export type FunctionCallEvent = {
 export type StreamCallbacks = {
   onFunctionCall?: (call: FunctionCallEvent) => void;
   onArgumentsDone?: (args: string) => void;
+  onTextDelta?: (text: string, raw: unknown) => void;
+  onFinish?: (finishReason: string | undefined, raw: unknown) => void;
   onEvent?: (raw: unknown) => void;
 };
 
@@ -133,6 +135,15 @@ export class OpenRouterClient {
 
     const decoder = new TextDecoder();
     let buffer = "";
+    let eventCount = 0;
+    let contentDeltaCount = 0;
+    let toolCallDeltaCount = 0;
+    let finishReasonSeen: string | undefined;
+    let loggedFirstToolCall = false;
+    const partialToolCalls: Record<
+      number,
+      { id?: string; name?: string; args: string; emitted: boolean }
+    > = {};
 
     while (true) {
       const { done, value } = await reader.read();
@@ -172,18 +183,87 @@ export class OpenRouterClient {
           typeof choice.delta === "object" &&
           choice.delta !== null
             ? (choice.delta as {
+                content?: unknown;
                 tool_calls?: Array<{
                   id?: string;
                   type?: string;
                   function?: { name?: string; arguments?: string };
                 }>;
+                function_call?: unknown;
               })
             : undefined;
+        const choiceObj =
+          choice && typeof choice === "object" && choice !== null ? (choice as Record<string, unknown>) : undefined;
+
+        eventCount += 1;
+
+        const contentDelta = typeof delta?.content === "string" ? delta.content : undefined;
+        if (contentDelta) {
+          contentDeltaCount += 1;
+          options.callbacks?.onTextDelta?.(contentDelta, parsed);
+        }
 
         const toolCalls = delta?.tool_calls ?? [];
+        if (toolCalls.length > 0) toolCallDeltaCount += 1;
         for (const toolCall of toolCalls) {
+          // Some providers stream tool calls in pieces (args before name). We accumulate by index.
+          const toolCallObj =
+            typeof toolCall === "object" && toolCall !== null
+              ? (toolCall as Record<string, unknown>)
+              : undefined;
+          const functionObj =
+            toolCallObj && typeof toolCallObj.function === "object" && toolCallObj.function !== null
+              ? (toolCallObj.function as Record<string, unknown>)
+              : undefined;
+          const idx = typeof toolCallObj?.index === "number" ? (toolCallObj.index as number) : 0;
+          const chunkArgs = typeof functionObj?.arguments === "string" ? (functionObj.arguments as string) : "";
+          const chunkName =
+            typeof functionObj?.name === "string"
+              ? (functionObj.name as string)
+              : typeof toolCallObj?.name === "string"
+                ? (toolCallObj.name as string)
+                : undefined;
+          const prev = partialToolCalls[idx] ?? { args: "", emitted: false };
+          const merged = {
+            id: (typeof toolCallObj?.id === "string" ? (toolCallObj.id as string) : undefined) ?? prev.id,
+            name: chunkName ?? prev.name,
+            args: prev.args + chunkArgs,
+            emitted: prev.emitted,
+          };
+          partialToolCalls[idx] = merged;
+
+          // Fallback path: if name is missing in this delta but we can recover it (from earlier deltas or from args),
+          // emit the tool call now so the caller doesn't treat it as "no tool calls".
+          if (!toolCall.function?.name && !merged.emitted) {
+            let recoveredName = merged.name;
+            if (!recoveredName) {
+              const parsedArgs = tryParseJson(merged.args);
+              if (parsedArgs && typeof parsedArgs === "object" && parsedArgs !== null) {
+                const maybeName = (parsedArgs as { name?: unknown }).name;
+                const maybeTool = (parsedArgs as { tool?: unknown }).tool;
+                if (typeof maybeName === "string") recoveredName = maybeName;
+                else if (typeof maybeTool === "string") recoveredName = maybeTool;
+              }
+            }
+            if (recoveredName) {
+              merged.emitted = true;
+              merged.name = recoveredName;
+              partialToolCalls[idx] = merged;
+              options.callbacks?.onFunctionCall?.({
+                id: merged.id,
+                callId: merged.id,
+                name: recoveredName,
+                arguments: merged.args,
+                raw: parsed,
+              });
+              continue;
+            }
+          }
+
           const name = toolCall.function?.name;
-          if (!name) continue;
+          if (!name) {
+            continue;
+          }
           options.callbacks?.onFunctionCall?.({
             id: toolCall.id,
             callId: toolCall.id,
@@ -195,11 +275,20 @@ export class OpenRouterClient {
 
         const finishReason =
           choice && typeof choice.finish_reason === "string" ? choice.finish_reason : undefined;
+        if (finishReason) {
+          finishReasonSeen = finishReason;
+          options.callbacks?.onFinish?.(finishReason, parsed);
+        }
+
         if (finishReason === "tool_calls") {
           const args = toolCalls.map((t) => t.function?.arguments ?? "").join("");
           options.callbacks?.onArgumentsDone?.(args);
         }
       }
+    }
+
+    if (!finishReasonSeen) {
+      // no-op
     }
   }
 }

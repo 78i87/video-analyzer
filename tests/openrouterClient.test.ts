@@ -38,3 +38,54 @@ describe("OpenRouterClient error handling", () => {
   });
 });
 
+describe("OpenRouterClient streaming callbacks", () => {
+  it("emits text deltas and finish reason", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => {
+        const encoder = new TextEncoder();
+        const chunks = [
+          'data: {"choices":[{"delta":{"content":"hello "}}]}\n\n',
+          'data: {"choices":[{"delta":{"content":"world"}}]}\n\n',
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+          "data: [DONE]\n\n",
+        ];
+
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+            controller.close();
+          },
+        });
+
+        return new Response(stream, { status: 200 });
+      };
+
+      const client = new OpenRouterClient("test-key", "test-model", {
+        baseUrl: "https://openrouter.ai",
+      });
+
+      let text = "";
+      let finishReason: string | undefined;
+
+      const options: StreamOptions = {
+        messages: [{ role: "user", content: "Hi" }],
+        tools: [],
+        callbacks: {
+          onTextDelta: (delta) => {
+            text += delta;
+          },
+          onFinish: (reason) => {
+            finishReason = reason;
+          },
+        },
+      };
+
+      await client.streamToolCalls(options);
+      expect(text).toBe("hello world");
+      expect(finishReason).toBe("stop");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
