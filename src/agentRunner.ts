@@ -73,6 +73,8 @@ export type AgentRunnerDeps = {
   client: OpenRouterClient;
   tools: ToolDefinition[];
   logModelOutput?: boolean;
+  reporter?: AgentRunReporter;
+  suppressSegmentLogs?: boolean;
 };
 
 export const viewerTools: ToolDefinition[] = [
@@ -107,6 +109,17 @@ async function readJpegDataUrl(filePath: string): Promise<string> {
   const base64 = Buffer.from(bytes).toString("base64");
   return `data:image/jpeg;base64,${base64}`;
 }
+
+export type AgentRunReporter = {
+  onSegment?: (update: {
+    agentId: string;
+    segment: Segment;
+    tool: AgentToolName;
+    decision: DoubleQuitDecision["decision"];
+    state: AgentState;
+  }) => void;
+  onDone?: (result: AgentRunResult) => void;
+};
 
 export async function runAgent(
   persona: AgentPersona,
@@ -240,14 +253,28 @@ export async function runAgent(
     const result = applyDoubleQuitRule(state, tool, segment.index);
     state = result.state;
 
-    logger.debug(
-      `[${persona.id}] segment=${segment.index} tool=${tool} decision=${result.decision}`,
-    );
+    deps.reporter?.onSegment?.({
+      agentId: persona.id,
+      segment,
+      tool,
+      decision: result.decision,
+      state,
+    });
+
+    if (!deps.suppressSegmentLogs) {
+      logger.debug(
+        `[${persona.id}] segment=${segment.index} tool=${tool} decision=${result.decision}`,
+      );
+    }
 
     if (result.decision === "stop") {
-      return { agentId: persona.id, stopSegmentIndex: state.stopSegmentIndex };
+      const finalResult = { agentId: persona.id, stopSegmentIndex: state.stopSegmentIndex };
+      deps.reporter?.onDone?.(finalResult);
+      return finalResult;
     }
   }
 
-  return { agentId: persona.id, stopSegmentIndex: undefined };
+  const finalResult = { agentId: persona.id, stopSegmentIndex: undefined };
+  deps.reporter?.onDone?.(finalResult);
+  return finalResult;
 }

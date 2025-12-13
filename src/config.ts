@@ -7,6 +7,7 @@ export type AppConfig = {
   openrouterModel: string;
   logLevel: string;
   logModelOutput: boolean;
+  progressUi: boolean;
   whisperBin?: string;
   whisperArgs?: string;
   ffmpegBin: string;
@@ -35,6 +36,7 @@ const envSchema = z.object({
     .default("z-ai/glm-4.6v"),
   LOG_LEVEL: z.string().trim().default("info"),
   LOG_MODEL_OUTPUT: z.string().optional(),
+  PROGRESS_UI: z.string().optional(),
   WHISPER_BIN: z.string().trim().optional(),
   WHISPER_ARGS: z.string().trim().optional(),
   FFMPEG_BIN: z.string().trim().default("ffmpeg"),
@@ -62,6 +64,10 @@ export function loadConfig(cwd = process.cwd()): AppConfig {
   const env = parsed.data;
   const frameDir = resolve(cwd, env.FRAME_DIR);
   const audioDir = resolve(cwd, env.AUDIO_DIR);
+  const progressUi =
+    env.PROGRESS_UI === undefined ?
+      Boolean((process.stderr as { isTTY?: boolean }).isTTY)
+    : parseBoolEnv(env.PROGRESS_UI, "PROGRESS_UI");
 
   ensureDir(frameDir);
   ensureDir(audioDir);
@@ -71,6 +77,7 @@ export function loadConfig(cwd = process.cwd()): AppConfig {
     openrouterModel: env.OPENROUTER_MODEL,
     logLevel: env.LOG_LEVEL,
     logModelOutput: parseBoolEnv(env.LOG_MODEL_OUTPUT, "LOG_MODEL_OUTPUT"),
+    progressUi,
     whisperBin: env.WHISPER_BIN,
     whisperArgs: env.WHISPER_ARGS,
     ffmpegBin: env.FFMPEG_BIN,

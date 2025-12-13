@@ -3,6 +3,8 @@ import { OpenRouterClient } from "./openrouterClient";
 import { runAgent, type AgentPersona, viewerTools } from "./agentRunner";
 import { segmentVideo } from "./videoSegmenter";
 import { logger, setLogLevel } from "./logger";
+import { MultiAgentProgressUi } from "./progressUi";
+import { summarizeSimulation } from "./simulationSummary";
 
 export async function buildSimulation(videoPath: string) {
   const config = loadConfig();
@@ -11,6 +13,7 @@ export async function buildSimulation(videoPath: string) {
   logger.info(
     `Config: model=${config.openrouterModel} agents=${config.agentCount} interval=${config.segmentIntervalSeconds}s`,
   );
+
   if (config.logModelOutput) {
     logger.info("Model output logging: enabled");
   }
@@ -42,20 +45,51 @@ export async function buildSimulation(videoPath: string) {
     }),
   );
 
-  // Run agents sequentially for now; parallel orchestration will be added with real streaming
-  const results = await Promise.all(
-    personas.map((persona) =>
-      runAgent(persona, segments, {
-        client,
-        tools: viewerTools,
-        logModelOutput: config.logModelOutput,
-      }),
-    ),
-  );
+  const progressUiEnabled =
+    config.progressUi &&
+    !config.logModelOutput &&
+    Boolean((process.stderr as { isTTY?: boolean }).isTTY);
 
-  return {
-    config,
-    segments,
-    results,
-  };
+  const ui = progressUiEnabled
+    ? new MultiAgentProgressUi({
+        agents: personas.map((p) => p.id),
+        segments,
+      })
+    : undefined;
+  ui?.start();
+
+  let finishedOk = false;
+  try {
+    // Run agents in parallel; each agent watches sequential segments.
+    const results = await Promise.all(
+      personas.map((persona) =>
+        runAgent(persona, segments, {
+          client,
+          tools: viewerTools,
+          logModelOutput: config.logModelOutput,
+          suppressSegmentLogs: progressUiEnabled,
+          reporter:
+            ui ?
+              {
+                onSegment: (update) => ui.onSegment(update),
+                onDone: (result) => ui.onDone(result.agentId, result.stopSegmentIndex),
+              }
+            : undefined,
+        }),
+      ),
+    );
+
+    const summary = summarizeSimulation(segments, results);
+    if (ui) ui.finish(summary);
+    finishedOk = true;
+
+    return {
+      config,
+      segments,
+      results,
+      summary,
+    };
+  } finally {
+    ui?.stop({ newline: !finishedOk });
+  }
 }
