@@ -41,7 +41,7 @@ describe("runAgent message inputs", () => {
     expect(lastOptions).toBeDefined();
     const userMessage = lastOptions!.messages.find((m) => m.role === "user")!;
     expect(userMessage.content).toHaveLength(1);
-    expect(userMessage.content[0]!.type).toBe("input_image");
+    expect(userMessage.content[0]!.type).toBe("image_url");
   });
 
   it("adds subtitle text when present", async () => {
@@ -69,9 +69,9 @@ describe("runAgent message inputs", () => {
 
     expect(lastOptions).toBeDefined();
     const userMessage = lastOptions!.messages.find((m) => m.role === "user")!;
-    expect(userMessage.content[0]!.type).toBe("input_image");
-    expect(userMessage.content[1]!.type).toBe("input_text");
-    expect((userMessage.content[1] as { type: "input_text"; text: string }).text).toContain(
+    expect(userMessage.content[0]!.type).toBe("image_url");
+    expect(userMessage.content[1]!.type).toBe("text");
+    expect((userMessage.content[1] as { type: "text"; text: string }).text).toContain(
       "hello world",
     );
   });

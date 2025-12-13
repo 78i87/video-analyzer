@@ -12,11 +12,14 @@ cp env.example .env    # fill in OPENROUTER_API_KEY
 ## Running
 
 ```bash
-bun start /path/to/video.mp4
+bun start "/path/to/video.mp4"
 ```
 
 Bun automatically loads `.env`.
 Segmentation extracts a single JPEG frame every `SEGMENT_INTERVAL_SECONDS` (default: 1). No audio is extracted; if `WHISPER_BIN` is set, the segment `subtitle` field is populated via Whisper JSON output.
+This project sends frames to OpenRouter as `image_url` content parts, so `OPENROUTER_MODEL` must be a vision-capable model.
+
+To record each agent's raw model output per segment to a file, set `AGENT_OUTPUT_LOG=1` (logs are written as JSONL under `AGENT_OUTPUT_LOG_DIR`, default `data/agent-logs`).
 
 ## Tests
 

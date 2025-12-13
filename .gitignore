@@ -171,6 +171,13 @@ dist
 # IntelliJ based IDEs
 .idea
 
+# Cursor
+.cursor/
+
 # Finder (MacOS) folder config
 .DS_Store
 ._*
+
+# Generated artifacts
+data/
+*.mp4

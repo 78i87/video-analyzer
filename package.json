@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/cli.ts",
-    "test": "rm -f tests/._*.ts && bun test",
-    "lint": "bun test --filter never"
+    "test": "find tests -name '._*.ts' -type f -delete 2>/dev/null || true; bun test",
+    "lint": "find tests -name '._*.ts' -type f -delete 2>/dev/null || true; bun test --filter never"
   },
   "devDependencies": {
     "@types/bun": "latest"
