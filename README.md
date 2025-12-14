@@ -21,6 +21,30 @@ This project sends frames to OpenRouter as `image_url` content parts, so `OPENRO
 
 To record each agent's raw model output per segment to a file, set `AGENT_OUTPUT_LOG=1` (logs are written as JSONL under `AGENT_OUTPUT_LOG_DIR`, default `data/agent-logs`).
 
+## Running Backend and Frontend (development)
+
+- **Backend:** Run the backend server with Bun. From your workspace root (Windows PowerShell):
+
+```powershell
+bun run .\video-analyzer\src\server.ts
+```
+
+Or, change into the `video-analyzer` directory and run:
+
+```powershell
+bun run src/server.ts
+```
+
+- **Frontend:** In a separate terminal, change to the frontend directory and start the dev server:
+
+```powershell
+cd video-analyzer\frontend
+npm install
+npm run dev
+```
+
+Run the backend first so the frontend can connect to the API.
+
 ## Tests
 
 ```bash
