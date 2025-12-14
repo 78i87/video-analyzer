@@ -7,6 +7,7 @@ describe("applyDoubleQuitRule", () => {
     expect(first.decision).toBe("continue");
     expect(first.coercedTool).toBe("keep_playing");
     expect(first.state.firstQuitSeen).toBe(true);
+    expect(first.state.status).toBe("probation");
   });
 
   it("stops after the second quit", () => {
@@ -16,6 +17,7 @@ describe("applyDoubleQuitRule", () => {
     expect(second.coercedTool).toBe("quit_video");
     expect(second.state.stopSegmentIndex).toBe(3);
     expect(second.state.stopped).toBe(true);
+    expect(second.state.status).toBe("stopped");
   });
 
   it("keeps playing when instructed", () => {
@@ -24,5 +26,6 @@ describe("applyDoubleQuitRule", () => {
     expect(next.decision).toBe("continue");
     expect(next.coercedTool).toBe("keep_playing");
     expect(next.state.firstQuitSeen).toBe(false);
+    expect(next.state.status).toBe("watching");
   });
 });

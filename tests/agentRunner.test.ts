@@ -7,6 +7,20 @@ import type { OpenRouterClient, StreamOptions } from "../src/openrouterClient";
 import { runAgent, viewerTools, type AgentPersona } from "../src/agentRunner";
 import type { Segment } from "../src/videoSegmenter";
 
+type ContentWithType = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
+function hasTypeField(value: unknown): value is ContentWithType {
+  return typeof value === "object" && value !== null && "type" in value;
+}
+
+function isImageContent(value: unknown): value is Extract<ContentWithType, { type: "image_url" }> {
+  return hasTypeField(value) && value.type === "image_url";
+}
+
+function isTextContent(value: unknown): value is Extract<ContentWithType, { type: "text" }> {
+  return hasTypeField(value) && value.type === "text";
+}
+
 function makeTempJpeg(): string {
   const dir = mkdtempSync(join(tmpdir(), "video-analyzer-"));
   const filePath = join(dir, "frame.jpg");
@@ -41,7 +55,7 @@ describe("runAgent message inputs", () => {
     expect(lastOptions).toBeDefined();
     const userMessage = lastOptions!.messages.find((m) => m.role === "user")!;
     expect(userMessage.content).toHaveLength(1);
-    expect(userMessage.content[0]!.type).toBe("image_url");
+    expect(isImageContent(userMessage.content[0])).toBe(true);
   });
 
   it("adds subtitle text when present", async () => {
@@ -69,10 +83,12 @@ describe("runAgent message inputs", () => {
 
     expect(lastOptions).toBeDefined();
     const userMessage = lastOptions!.messages.find((m) => m.role === "user")!;
-    expect(userMessage.content[0]!.type).toBe("image_url");
-    expect(userMessage.content[1]!.type).toBe("text");
-    expect((userMessage.content[1] as { type: "text"; text: string }).text).toContain(
-      "hello world",
-    );
+    expect(isImageContent(userMessage.content[0])).toBe(true);
+
+    const secondContent = userMessage.content[1];
+    expect(isTextContent(secondContent)).toBe(true);
+    if (isTextContent(secondContent)) {
+      expect(secondContent.text).toContain("hello world");
+    }
   });
 });

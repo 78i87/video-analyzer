@@ -7,10 +7,12 @@ import {
 
 describe("validateDependencies", () => {
   it("accepts binaries that exist in PATH", async () => {
+    const existingBinary = process.execPath;
+
     await expect(
       validateDependencies({
-        ffmpegBin: "true",
-        ffprobeBin: "true",
+        ffmpegBin: existingBinary,
+        ffprobeBin: existingBinary,
         frameDir: "data/frames",
         audioDir: "data/audio",
         segmentIntervalSeconds: 8,

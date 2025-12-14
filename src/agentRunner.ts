@@ -3,6 +3,7 @@ import type { ChatMessage, OpenRouterClient, ToolDefinition } from "./openrouter
 import type { AgentOutputRecorder } from "./agentOutputRecorder";
 import { logger } from "./logger";
 import { Buffer } from "node:buffer";
+import type { EventEmitter } from "node:events";
 
 export type AgentToolName = "keep_playing" | "quit_video";
 
@@ -10,6 +11,7 @@ export type AgentState = {
   firstQuitSeen: boolean;
   stopped: boolean;
   stopSegmentIndex?: number;
+  status: "watching" | "probation" | "stopped";
 };
 
 export type DoubleQuitDecision = {
@@ -21,6 +23,7 @@ export type DoubleQuitDecision = {
 export const initialAgentState = (): AgentState => ({
   firstQuitSeen: false,
   stopped: false,
+  status: "watching",
 });
 
 export function applyDoubleQuitRule(
@@ -33,6 +36,7 @@ export function applyDoubleQuitRule(
       const nextState: AgentState = {
         ...state,
         firstQuitSeen: true,
+        status: "probation",
       };
       return {
         coercedTool: "keep_playing",
@@ -45,6 +49,7 @@ export function applyDoubleQuitRule(
       ...state,
       stopped: true,
       stopSegmentIndex: segmentIndex,
+      status: "stopped",
     };
     return {
       coercedTool: "quit_video",
@@ -78,6 +83,7 @@ export type AgentRunnerDeps = {
   runId?: string;
   reporter?: AgentRunReporter;
   suppressSegmentLogs?: boolean;
+  events?: Pick<EventEmitter, "emit">;
 };
 
 export const viewerTools: ToolDefinition[] = [
@@ -256,6 +262,14 @@ export async function runAgent(
     const result = applyDoubleQuitRule(state, tool, segment.index);
     state = result.state;
 
+    deps.events?.emit("decision", {
+      agentId: persona.id,
+      segment,
+      tool,
+      decision: result.decision,
+      state,
+    });
+
     const runId = deps.runId;
     if (runId && deps.outputRecorder) {
       void deps.outputRecorder
@@ -296,6 +310,12 @@ export async function runAgent(
     }
 
     if (result.decision === "stop") {
+      deps.events?.emit("stop", {
+        agentId: persona.id,
+        stopSegmentIndex: state.stopSegmentIndex,
+        state,
+      });
+
       const finalResult = { agentId: persona.id, stopSegmentIndex: state.stopSegmentIndex };
       deps.reporter?.onDone?.(finalResult);
       return finalResult;
