@@ -16,16 +16,58 @@ mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const app = new Elysia();
 
+// basic health endpoint to help the frontend dev proxy and debugging
+app.get("/health", () => ({ ok: true }));
+
+// global error handlers so startup crashes are printed clearly
+process.on("uncaughtException", (err) => {
+  logger.error(`Uncaught exception: ${String(err)}\n${err && (err as Error).stack ? (err as Error).stack : "(no stack)"}`);
+  // allow process to exit with non-zero code so external wrappers see failure
+  process.exitCode = 1;
+});
+
+process.on("unhandledRejection", (reason) => {
+  logger.error(`Unhandled rejection: ${String(reason)}`);
+  process.exitCode = 1;
+});
+
 // POST /api/upload: accepts multipart/form-data with field `file`
 app.post("/api/upload", async ({ request, set }) => {
   try {
+    logger.info("/api/upload: incoming upload request");
     const form = await request.formData();
     const file = form.get("file") as File | null;
-    if (!file) return { ok: false, error: "missing file field" };
+    if (!file) {
+      logger.warn("/api/upload: missing 'file' field in form data");
+      set.status = 400;
+      return { ok: false, error: "missing file field" };
+    }
 
-    const buffer = await file.arrayBuffer();
-    await Bun.write(UPLOAD_PATH, new Uint8Array(buffer));
-    return { ok: true, path: UPLOAD_PATH };
+    // log file metadata when available
+    try {
+      const name = (file as any).name ?? "(unknown)";
+      const size = typeof (file as any).size === "number" ? (file as any).size : undefined;
+      logger.info(`/api/upload: receiving file name=${name} size=${size ?? "unknown"}`);
+    } catch (_) {}
+
+    let buffer: ArrayBuffer;
+    try {
+      buffer = await file.arrayBuffer();
+    } catch (err) {
+      logger.error(`/api/upload: failed to read uploaded file: ${String(err)}`);
+      set.status = 400;
+      return { ok: false, error: `failed to read uploaded file: ${String(err)}` };
+    }
+
+    try {
+      await Bun.write(UPLOAD_PATH, new Uint8Array(buffer));
+      logger.info(`/api/upload: wrote upload to ${UPLOAD_PATH}`);
+      return { ok: true, path: UPLOAD_PATH };
+    } catch (err) {
+      logger.error(`/api/upload: failed to write upload: ${String(err)}`);
+      set.status = 500;
+      return { ok: false, error: `failed to write upload: ${String(err)}` };
+    }
   } catch (err) {
     logger.warn(`Upload failed: ${String(err)}`);
     set.status = 500;
@@ -126,7 +168,14 @@ app.ws("/ws", {
           try { ws.send(JSON.stringify({ event: "decision", payload })); } catch (_) {}
         });
         emitter.on("stop", (payload) => {
-          try { ws.send(JSON.stringify({ event: "stop", payload })); } catch (_) {}
+          try {
+            // augment stop payload with stopSeconds computed from segments
+            const stopIndex = (payload && typeof payload.stopSegmentIndex === "number") ? payload.stopSegmentIndex : undefined;
+            const stopSeconds = stopIndex === undefined ? (segments.length === 0 ? 0 : segments[segments.length - 1]!.end) :
+              Math.max(0, Math.min(stopIndex, segments.length - 1)) >= 0 ? segments[Math.max(0, Math.min(stopIndex, segments.length - 1))]!.end : 0;
+            const out = { ...(payload ?? {}), stopSeconds };
+            ws.send(JSON.stringify({ event: "stop", payload: out }));
+          } catch (_) {}
         });
 
         // notify client how many segments were prepared and total duration
@@ -145,7 +194,16 @@ app.ws("/ws", {
 
         Promise.all(runs)
           .then((results) => {
-            try { ws.send(JSON.stringify({ event: "done", payload: results })); } catch (_) {}
+            try {
+              // augment final results with stopSeconds for frontend convenience
+              const enriched = results.map((r) => {
+                const stopIndex = typeof r.stopSegmentIndex === "number" ? r.stopSegmentIndex : undefined;
+                const stopSeconds = stopIndex === undefined ? (segments.length === 0 ? 0 : segments[segments.length - 1]!.end) :
+                  Math.max(0, Math.min(stopIndex, segments.length - 1)) >= 0 ? segments[Math.max(0, Math.min(stopIndex, segments.length - 1))]!.end : 0;
+                return { ...r, stopSeconds };
+              });
+              ws.send(JSON.stringify({ event: "done", payload: enriched }));
+            } catch (_) {}
             ws.close();
           })
           .catch((err) => {
@@ -163,7 +221,13 @@ app.ws("/ws", {
 });
 
 const port = Number(process.env.PORT ?? 3000);
-app.listen({ port });
-logger.info(`Server listening on http://localhost:${port}`);
+try {
+  app.listen({ port });
+  logger.info(`Server listening on http://localhost:${port}`);
+} catch (err) {
+  logger.error(`Failed to start server: ${String(err)}`);
+  // rethrow so the process exits with failure when run directly
+  throw err;
+}
 
 export default app;

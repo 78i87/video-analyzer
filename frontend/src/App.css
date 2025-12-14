@@ -101,5 +101,16 @@
 .skull {
   margin-left: 8px;
 }
+.agent-status { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
+.status-icon { width: 14px; height: 14px; border-radius: 2px; display: inline-block; }
+.status-continue { background: #66bb6a; }
+.status-quit1 { background: #ffa726; }
+.status-quit2 { background: #ef5350; }
+.agent-seg { font-size: 0.9em; color: #333; }
+
+.simulation-summary { margin-top: 1rem; border-top: 1px solid #e5e5e5; padding-top: 0.75rem; text-align: left; max-width: 800px; margin-left: auto; margin-right: auto; }
+.simulation-summary h2 { margin: 0 0 0.5rem 0; font-size: 1.1rem; }
+.summary-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem 1rem; }
+.summary-stats div { background: #2b2b2b; padding: 0.4rem 0.6rem; border-radius: 4px; border: 1px solid #eee; }
 .live-log { margin-top: 1rem; max-height: 240px; overflow: hidden; border: 1px solid #ddd; }
 .log-pre { margin: 0; padding: 0.75rem; height: 240px; overflow: auto; background: #0b0b0b; color: #dcdcdc; font-family: monospace; }

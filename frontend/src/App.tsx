@@ -3,6 +3,7 @@ import "./App.css";
 import ControlPanel from "./components/ControlPanel";
 import AgentLane from "./components/AgentLane";
 import LiveLog from "./components/LiveLog";
+import SimulationSummary from "./components/SimulationSummary";
 
 type Decision = "CONTINUE" | "QUIT1" | "QUIT2";
 
@@ -104,17 +105,10 @@ export default function App() {
               return next;
             });
 
-            // update watch seconds from segment end
-            setWatchSeconds((prev) => {
-              const copy = [...prev];
-              copy[idx] = segment?.end ?? copy[idx];
-              return copy;
-            });
-
             appendLog(`${agentId}: ${tool} -> ${decision} (segment=${segment?.index})`);
           }
         } else if (event === "stop") {
-          const { agentId, stopSegmentIndex, state } = payload;
+          const { agentId, stopSegmentIndex, stopSeconds, state } = payload;
           const idx = Number(agentId.split("-")[1]) - 1;
           if (idx >= 0 && idx < a) {
             setDead((prev) => {
@@ -126,27 +120,29 @@ export default function App() {
             // set final watch seconds to last seen watchSeconds for that agent
             setFinalWatchSeconds((prev) => {
               const copy = [...prev];
-              copy[idx] = watchSeconds[idx] ?? copy[idx] ?? 0;
+              copy[idx] = typeof stopSeconds === "number" ? stopSeconds : (copy[idx] ?? 0);
               return copy;
             });
 
             appendLog(`${agentId} stopped at segment ${stopSegmentIndex}`);
           }
+        } else if (event === "error") {
+          appendLog(`Server error: ${String(payload)}`);
         } else if (event === "done") {
-          const results: { agentId: string; stopSegmentIndex?: number }[] = payload;
-          // mark any agents that didn't stop as having watched full duration
+          // server sends enriched results with `stopSeconds` for each agent
+          const results: { agentId: string; stopSegmentIndex?: number; stopSeconds?: number }[] = payload;
           setFinalWatchSeconds((prev) => {
             const copy = [...prev];
             for (let i = 0; i < a; i++) {
-              if (copy[i] === undefined) copy[i] = videoDurationSeconds || watchSeconds[i] || 0;
+              const res = results[i];
+              if (res && typeof res.stopSeconds === "number") copy[i] = res.stopSeconds;
+              else if (copy[i] === undefined) copy[i] = videoDurationSeconds;
             }
             return copy;
           });
           setRunning(false);
           appendLog("Simulation finished (done)");
           try { ws.close(); } catch (_) {}
-        } else if (event === "error") {
-          appendLog(`Server error: ${String(payload)}`);
         }
       } catch (err) {
         appendLog(`WS message parse error: ${String(err)}`);
@@ -159,6 +155,18 @@ export default function App() {
   }
 
   const segmentCount = totalSegments || agents.reduce((m, row) => Math.max(m, row.length), 0);
+
+  const summary = React.useMemo(() => {
+    if (running) return null; // only show summary when simulation finished
+    const vals = finalWatchSeconds.filter((v): v is number => typeof v === "number");
+    if (!vals || vals.length === 0) return null;
+    const count = vals.length;
+    const total = vals.reduce((s, v) => s + v, 0);
+    const avg = total / count;
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    return { avg, min, max, count, total, videoDurationSeconds };
+  }, [finalWatchSeconds, videoDurationSeconds, running]);
 
   return (
     <div id="root">
@@ -184,6 +192,7 @@ export default function App() {
 
       <h2>Live Log</h2>
       <LiveLog lines={logs} />
+      <SimulationSummary summary={summary} />
     </div>
   );
 }
