@@ -21,10 +21,16 @@ export type AgentOutputRecord =
       subtitle: string;
       modelTool: string;
       coercedTool: string;
+      model_used?: string | null;
       decision: "continue" | "stop";
       finishReason: string | null;
       assistantText: string;
       sawToolCallDelta: boolean;
+      decision_reason?: string | null;
+      subconscious_thought?: string | null;
+      curiosity_level?: number | null;
+      raw_assistant_text?: string | null;
+      raw_function_args?: string | null;
     }
   | {
       type: "run_end";

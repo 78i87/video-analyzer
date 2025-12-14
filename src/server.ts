@@ -154,7 +154,14 @@ app.ws("/ws", {
           segmentIntervalSeconds: config.segmentIntervalSeconds,
         });
 
-        const client = new OpenRouterClient(config.openrouterApiKey, config.openrouterModel);
+        logger.info(
+          `OpenRouter config: model=${config.openrouterModel} fallback=[${config.openrouterModelFallback.join(",")}] maxAttempts=${config.openrouterModelMaxAttempts}`,
+        );
+
+        const client = new OpenRouterClient(config.openrouterApiKey, config.openrouterModel, {
+          fallbackModels: config.openrouterModelFallback,
+          maxAttempts: config.openrouterModelMaxAttempts,
+        });
 
         const personas: AgentPersona[] = Array.from({ length: agentCount }).map((_, idx) => ({
           id: `agent-${idx + 1}`,
@@ -189,6 +196,7 @@ app.ws("/ws", {
             tools: viewerTools,
             runId: new Date().toISOString(),
             events: emitter,
+            logModelOutput: true,
           }),
         );
 

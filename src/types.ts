@@ -4,6 +4,6 @@ export type AgentDecision = {
   agentId: string;
   segmentIndex: number;
   decision: 'CONTINUE' | 'QUIT';
-  reason: string;
+  reason?: string | null;
   isSecondQuit: boolean; // Did this trigger the final exit?
 };

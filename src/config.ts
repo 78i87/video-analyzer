@@ -6,6 +6,8 @@ import { z } from "zod";
 export type AppConfig = {
   openrouterApiKey: string;
   openrouterModel: string;
+  openrouterModelFallback: string[];
+  openrouterModelMaxAttempts: number;
   logLevel: string;
   logModelOutput: boolean;
   agentOutputLog: boolean;
@@ -37,6 +39,7 @@ const envSchema = z.object({
     .string()
     .trim()
     .default("z-ai/glm-4.6v"),
+  OPENROUTER_MODEL_FALLBACK: z.string().trim().optional(),
   LOG_LEVEL: z.string().trim().default("info"),
   LOG_MODEL_OUTPUT: z.string().optional(),
   AGENT_OUTPUT_LOG: z.string().optional(),
@@ -50,6 +53,7 @@ const envSchema = z.object({
   FRAME_DIR: z.string().trim().default("data/frames"),
   AUDIO_DIR: z.string().trim().default("data/audio"),
   AGENT_COUNT: z.coerce.number().int().positive().default(5),
+  OPENROUTER_MODEL_MAX_ATTEMPTS: z.coerce.number().int().positive().optional(),
 });
 
 function ensureDir(dir: string) {
@@ -123,9 +127,34 @@ export function loadConfig(cwd = process.cwd()): AppConfig {
   ensureDir(audioDir);
   if (agentOutputLog) ensureDir(agentOutputLogDir);
 
+  // Parse OPENROUTER_MODEL_FALLBACK which may be provided either as a
+  // JSON array (e.g. ["a","b"]) or a comma-separated string.
+  let parsedFallback: string[] = [];
+  const rawFallback = env.OPENROUTER_MODEL_FALLBACK ?? "";
+  const trimmedFallback = String(rawFallback).trim();
+  if (trimmedFallback) {
+    if (trimmedFallback.startsWith("[") && trimmedFallback.endsWith("]")) {
+      try {
+        const arr = JSON.parse(trimmedFallback);
+        if (Array.isArray(arr)) {
+          parsedFallback = arr.map((x) => String(x).trim()).filter(Boolean);
+        } else {
+          parsedFallback = trimmedFallback.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+      } catch (_err) {
+        // If JSON parsing fails, fall back to comma-splitting.
+        parsedFallback = trimmedFallback.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    } else {
+      parsedFallback = trimmedFallback.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+  }
+
   return {
     openrouterApiKey: env.OPENROUTER_API_KEY,
     openrouterModel: env.OPENROUTER_MODEL,
+    openrouterModelFallback: parsedFallback,
+    openrouterModelMaxAttempts: env.OPENROUTER_MODEL_MAX_ATTEMPTS ?? (1 + parsedFallback.length),
     logLevel: env.LOG_LEVEL,
     logModelOutput,
     agentOutputLog,

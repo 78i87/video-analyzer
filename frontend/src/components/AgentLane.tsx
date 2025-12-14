@@ -1,16 +1,19 @@
 import React from "react";
+import Tooltip from "./Tooltip";
 
 type Decision = "CONTINUE" | "QUIT1" | "QUIT2";
 
 type Props = {
   agentName: string;
   blocks: Decision[];
+  blockDetails?: { decision_reason?: string | null; subconscious_thought?: string | null; curiosity_level?: number | null }[];
   isDead?: boolean;
   segmentCount?: number;
   watchSeconds?: number;
   videoDurationSeconds?: number;
+  onSelect?: () => void;
 };
-export default function AgentLane({ agentName, blocks, isDead, segmentCount = 0, watchSeconds = 0, videoDurationSeconds = 0 }: Props) {
+export default function AgentLane({ agentName, blocks, blockDetails, isDead, segmentCount = 0, watchSeconds = 0, videoDurationSeconds = 0, onSelect }: Props) {
 
   function formatSeconds(s: number) {
     if (!Number.isFinite(s) || s <= 0) return "0.00s";
@@ -28,7 +31,19 @@ export default function AgentLane({ agentName, blocks, isDead, segmentCount = 0,
   const lastBlock = blocks.length ? blocks[blocks.length - 1].toLowerCase() : null;
 
   return (
-    <div className="agent-lane">
+    <div
+      className="agent-lane"
+      onClick={() => onSelect?.()}
+      onKeyDown={(e) => {
+        if ((e as any).key === "Enter" || (e as any).key === " ") {
+          (e as any).preventDefault();
+          onSelect?.();
+        }
+      }}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      style={{ cursor: onSelect ? 'pointer' : undefined }}
+    >
       <div className="agent-name" style={{ color: '#ffffff', fontWeight: 500 }}>
         <span style={{ color: '#ffffff' }}>{agentName}</span> —
         <span className="agent-status" style={{ color: '#ffffffff', marginLeft: '6px' }}>
@@ -48,13 +63,20 @@ export default function AgentLane({ agentName, blocks, isDead, segmentCount = 0,
         </span>
       </div>
       <div className="blocks">
-        {blocks.map((b, i) => (
-          <div
-            key={i}
-            className={`block block-${b.toLowerCase()}`}
-            title={b}
-          />
-        ))}
+        {blocks.map((b, i) => {
+          const det = blockDetails?.[i] ?? {};
+          const reason = det.decision_reason ?? det.subconscious_thought ?? (typeof det.curiosity_level === 'number' ? `curiosity ${det.curiosity_level}` : null);
+          const title = reason ? `${b}: ${reason}` : b;
+          const aria = reason ? `${b}: ${reason}` : b;
+          return (
+            <Tooltip key={i} content={reason}>
+              <span
+                className={`block block-${b.toLowerCase()}`}
+                aria-label={aria}
+              />
+            </Tooltip>
+          );
+        })}
         {isDead ? <div className="skull">☠️</div> : null}
       </div>
     </div>

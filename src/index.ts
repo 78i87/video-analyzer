@@ -56,7 +56,10 @@ export async function buildSimulation(videoPath: string) {
     logger.warn("Segments prepared: 0");
   }
 
-  const client = new OpenRouterClient(config.openrouterApiKey, config.openrouterModel);
+  const client = new OpenRouterClient(config.openrouterApiKey, config.openrouterModel, {
+    fallbackModels: config.openrouterModelFallback,
+    maxAttempts: config.openrouterModelMaxAttempts,
+  });
 
   const personas: AgentPersona[] = Array.from({ length: config.agentCount }).map(
     (_, idx) => ({

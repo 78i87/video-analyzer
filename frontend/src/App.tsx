@@ -4,6 +4,7 @@ import ControlPanel from "./components/ControlPanel";
 import AgentLane from "./components/AgentLane";
 import LiveLog from "./components/LiveLog";
 import SimulationSummary from "./components/SimulationSummary";
+import AgentDetailsPane from "./components/AgentDetailsPane";
 
 type Decision = "CONTINUE" | "QUIT1" | "QUIT2";
 
@@ -11,8 +12,11 @@ export default function App() {
   const [agentCount, setAgentCount] = useState<number>(5);
   const [agents, setAgents] = useState<Decision[][]>([]);
   const [dead, setDead] = useState<boolean[]>([]);
+  type BlockDetail = { decision_reason?: string | null; subconscious_thought?: string | null; curiosity_level?: number | null; raw_assistant_text?: string | null; raw_function_args?: string | null; model_used?: string | null };
+  const [blockDetails, setBlockDetails] = useState<BlockDetail[][]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<number | null>(null);
 
   // total segments and video duration sent from server
   const [totalSegments, setTotalSegments] = useState<number>(0);
@@ -28,6 +32,7 @@ export default function App() {
     setDead(Array.from({ length: agentCount }, () => false));
     setWatchSeconds(Array.from({ length: agentCount }, () => 0));
     setFinalWatchSeconds(Array.from({ length: agentCount }, () => undefined));
+    setBlockDetails(Array.from({ length: agentCount }, () => []));
   }, [agentCount]);
 
   function appendLog(line: string) {
@@ -44,6 +49,7 @@ export default function App() {
     setVideoDurationSeconds(0);
     setWatchSeconds(Array.from({ length: a }, () => 0));
     setFinalWatchSeconds(Array.from({ length: a }, () => undefined));
+    setBlockDetails(Array.from({ length: a }, () => []));
 
       // upload file if provided
       if (file) {
@@ -92,7 +98,52 @@ export default function App() {
           setVideoDurationSeconds(payload.videoDurationSeconds ?? 0);
           appendLog(`Segments prepared: ${payload.count}`);
         } else if (event === "decision") {
-          const { agentId, segment, tool, decision, state } = payload;
+          const { agentId, segment, tool, decision, state, decision_reason } = payload;
+          // debug: log decision payload fields used for tooltips
+          // includes optional fields that may be present on payload
+          console.debug("WS decision payload:", {
+            agentId,
+            segment,
+            tool,
+            decision,
+            decision_reason,
+            subconscious_thought: payload?.subconscious_thought,
+            curiosity_level: payload?.curiosity_level,
+          });
+          let subconscious: string | null = payload?.subconscious_thought ?? null;
+          let curiosity: number | null = typeof payload?.curiosity_level === "number" ? payload.curiosity_level : null;
+          const rawArgs: string | null = payload?.raw_function_args ?? null;
+          const rawText: string | null = payload?.raw_assistant_text ?? null;
+          const modelUsed: string | null = payload?.model_used ?? payload?.modelUsed ?? null;
+
+          // Try to parse structured fields from raw function args if primary fields are missing
+          if ((!subconscious || subconscious === "") && rawArgs) {
+            try {
+              const parsed = JSON.parse(rawArgs);
+              if (parsed && typeof parsed === "object") {
+                if (!subconscious && parsed.subconscious_thought) subconscious = String(parsed.subconscious_thought);
+                if (curiosity === null && typeof parsed.curiosity_level === "number") curiosity = parsed.curiosity_level;
+              }
+            } catch (_e) {
+              // ignore parse errors
+            }
+          }
+
+          // As a last resort try to extract JSON from assistant text
+          if ((!subconscious || subconscious === "") && rawText) {
+            const jsonMatch = rawText.match(/\{.*\}/s);
+            if (jsonMatch) {
+              try {
+                const parsed = JSON.parse(jsonMatch[0]);
+                if (parsed && typeof parsed === "object") {
+                  if (!subconscious && parsed.subconscious_thought) subconscious = String(parsed.subconscious_thought);
+                  if (curiosity === null && typeof parsed.curiosity_level === "number") curiosity = parsed.curiosity_level;
+                }
+              } catch (_e) {
+                // ignore
+              }
+            }
+          }
           const idx = Number(agentId.split("-")[1]) - 1;
           if (idx >= 0 && idx < a) {
             setAgents((prev) => {
@@ -102,6 +153,12 @@ export default function App() {
                 : tool === "quit_video" && decision === "continue" ? "QUIT1"
                 : "QUIT2";
               next[idx] = [...next[idx], block];
+              return next;
+            });
+
+            setBlockDetails((prev) => {
+              const next = prev.map((r) => [...r]);
+              next[idx] = [...(next[idx] ?? []), { decision_reason: decision_reason ?? null, subconscious_thought: subconscious ?? null, curiosity_level: curiosity, raw_assistant_text: rawText ?? null, raw_function_args: rawArgs ?? null, model_used: modelUsed }];
               return next;
             });
 
@@ -170,6 +227,13 @@ export default function App() {
 
   return (
     <div id="root">
+      <AgentDetailsPane
+        open={selectedAgent !== null}
+        agentIndex={selectedAgent ?? 0}
+        segments={selectedAgent !== null ? agents[selectedAgent] ?? [] : []}
+        blockDetails={selectedAgent !== null ? blockDetails[selectedAgent] ?? [] : []}
+        onClose={() => setSelectedAgent(null)}
+      />
       <h1>Simulation Visualizer</h1>
       <ControlPanel defaultAgents={5} onStart={onStart} />
 
@@ -182,10 +246,12 @@ export default function App() {
             key={i}
             agentName={`Agent ${i + 1}`}
             blocks={blocks}
+            blockDetails={blockDetails[i]}
             isDead={dead[i]}
             segmentCount={segmentCount}
             watchSeconds={finalWatchSeconds[i] ?? watchSeconds[i]}
             videoDurationSeconds={videoDurationSeconds}
+            onSelect={() => setSelectedAgent((prev) => (prev === i ? null : i))}
           />
         ))}
       </div>
