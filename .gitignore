@@ -181,3 +181,7 @@ dist
 # Generated artifacts
 data/
 *.mp4
+
+# Lockfiles (repo uses Bun)
+package-lock.json
+**/package-lock.json

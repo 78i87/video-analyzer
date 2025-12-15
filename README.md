@@ -36,8 +36,8 @@ bun run src/server.ts
 ```bash
 cd frontend
 # Vite 7 requires Node >= 20.19 or >= 22.12 (see `frontend/.nvmrc`)
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 Then open the URL Vite prints (typically `http://localhost:5173`). The frontend proxies `/api/*` and `/ws` to the backend at `http://localhost:3000` (see `frontend/vite.config.ts`), so start the backend first.
@@ -46,8 +46,8 @@ If you see an error like `Cannot find module @rollup/rollup-darwin-arm64`, reins
 
 ```bash
 cd frontend
-rm -rf node_modules package-lock.json
-npm install
+rm -rf node_modules bun.lockb
+bun install
 ```
 
 ## Tests
