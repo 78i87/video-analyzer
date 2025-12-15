@@ -5,6 +5,7 @@ import AgentLane from "./components/AgentLane";
 import LiveLog from "./components/LiveLog";
 import SimulationSummary from "./components/SimulationSummary";
 import AgentDetailsPane from "./components/AgentDetailsPane";
+import { extractDecisionFields, mergeDecisionFields } from "./utils/jsonParsing";
 
 type Decision = "CONTINUE" | "QUIT1" | "QUIT2";
 
@@ -150,40 +151,16 @@ export default function App() {
             subconscious_thought: p.subconscious_thought,
             curiosity_level: p.curiosity_level,
           });
-          let subconscious: string | null = p.subconscious_thought ?? null;
-          let curiosity: number | null = typeof p.curiosity_level === "number" ? p.curiosity_level : null;
           const rawArgs: string | null = p.raw_function_args ?? null;
           const rawText: string | null = p.raw_assistant_text ?? null;
           const modelUsed: string | null = p.model_used ?? null;
 
-          // Try to parse structured fields from raw function args if primary fields are missing
-          if ((!subconscious || subconscious === "") && rawArgs) {
-            try {
-              const parsed = JSON.parse(rawArgs);
-              if (parsed && typeof parsed === "object") {
-                if (!subconscious && parsed.subconscious_thought) subconscious = String(parsed.subconscious_thought);
-                if (curiosity === null && typeof parsed.curiosity_level === "number") curiosity = parsed.curiosity_level;
-              }
-            } catch (_e) {
-              // ignore parse errors
-            }
-          }
-
-          // As a last resort try to extract JSON from assistant text
-          if ((!subconscious || subconscious === "") && rawText) {
-            const jsonMatch = rawText.match(/\{.*\}/s);
-            if (jsonMatch) {
-              try {
-                const parsed = JSON.parse(jsonMatch[0]);
-                if (parsed && typeof parsed === "object") {
-                  if (!subconscious && parsed.subconscious_thought) subconscious = String(parsed.subconscious_thought);
-                  if (curiosity === null && typeof parsed.curiosity_level === "number") curiosity = parsed.curiosity_level;
-                }
-              } catch (_e) {
-                // ignore
-              }
-            }
-          }
+          // Extract and merge decision fields from primary payload and fallback sources
+          const { subconscious_thought: subconscious, curiosity_level: curiosity } = mergeDecisionFields(
+            { subconscious_thought: p.subconscious_thought, curiosity_level: p.curiosity_level },
+            extractDecisionFields(rawArgs),
+            extractDecisionFields(rawText),
+          );
           const idx = Number(agentId.split("-")[1]) - 1;
           if (idx >= 0 && idx < a) {
             setAgents((prev) => {

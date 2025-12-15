@@ -341,13 +341,3 @@ export async function segmentVideo(
     subtitle: subtitles[idx] ?? "",
   }));
 }
-
-export function buildSegmentPaths(
-  baseDir: string,
-  index: number,
-  kind: "frame" | "audio",
-) {
-  const padded = String(index).padStart(6, "0");
-  const fileName = kind === "frame" ? `frame-${padded}.jpg` : `audio-${padded}.wav`;
-  return resolve(baseDir, fileName);
-}

@@ -82,6 +82,17 @@ const UPLOAD_PATH = resolve(UPLOADS_DIR, "temp.mp4");
 
 mkdirSync(UPLOADS_DIR, { recursive: true });
 
+// Helper to send WebSocket messages with error logging instead of silent swallowing
+function wsSend(ws: { send: (data: string) => void }, data: object): boolean {
+  try {
+    ws.send(JSON.stringify(data));
+    return true;
+  } catch (err) {
+    logger.warn(`WebSocket send failed: ${String(err)}`);
+    return false;
+  }
+}
+
 function stopSecondsFor(segments: Segment[], stopSegmentIndex: number | undefined) {
   if (segments.length === 0) return 0;
   if (typeof stopSegmentIndex !== "number") return segments[segments.length - 1]!.end;
@@ -165,7 +176,7 @@ app.ws("/ws", {
         try {
           config = loadConfig();
         } catch (err) {
-          try { ws.send(JSON.stringify({ event: "error", payload: `loadConfig error: ${String(err)}` })); } catch (_) {}
+          wsSend(ws, { event: "error", payload: `loadConfig error: ${String(err)}` });
           return;
         }
 
@@ -200,21 +211,19 @@ app.ws("/ws", {
 
         // Forward events to the websocket
         emitter.on("decision", (payload) => {
-          try { ws.send(JSON.stringify({ event: "decision", payload })); } catch (_) {}
+          wsSend(ws, { event: "decision", payload });
         });
         emitter.on("stop", (payload) => {
-          try {
-            // augment stop payload with stopSeconds computed from segments
-            const stopIndex = (payload && typeof payload.stopSegmentIndex === "number") ? payload.stopSegmentIndex : undefined;
-            const stopSeconds = stopSecondsFor(segments, stopIndex);
-            const out = { ...(payload ?? {}), stopSeconds };
-            ws.send(JSON.stringify({ event: "stop", payload: out }));
-          } catch (_) {}
+          // augment stop payload with stopSeconds computed from segments
+          const stopIndex = (payload && typeof payload.stopSegmentIndex === "number") ? payload.stopSegmentIndex : undefined;
+          const stopSeconds = stopSecondsFor(segments, stopIndex);
+          const out = { ...(payload ?? {}), stopSeconds };
+          wsSend(ws, { event: "stop", payload: out });
         });
 
         // notify client how many segments were prepared and total duration
         const videoDurationSeconds = segments.length === 0 ? 0 : segments[segments.length - 1]!.end;
-        try { ws.send(JSON.stringify({ event: "segmentsPrepared", payload: { count: segments.length, videoDurationSeconds } })); } catch (_) {}
+        wsSend(ws, { event: "segmentsPrepared", payload: { count: segments.length, videoDurationSeconds } });
 
         // run agents in parallel
         const runs = personas.map((persona) =>
@@ -229,24 +238,22 @@ app.ws("/ws", {
 
         Promise.all(runs)
           .then((results) => {
-            try {
-              // augment final results with stopSeconds for frontend convenience
-              const enriched = results.map((r) => {
-                const stopIndex = typeof r.stopSegmentIndex === "number" ? r.stopSegmentIndex : undefined;
-                const stopSeconds = stopSecondsFor(segments, stopIndex);
-                return { ...r, stopSeconds };
-              });
-              ws.send(JSON.stringify({ event: "done", payload: enriched }));
-            } catch (_) {}
+            // augment final results with stopSeconds for frontend convenience
+            const enriched = results.map((r) => {
+              const stopIndex = typeof r.stopSegmentIndex === "number" ? r.stopSegmentIndex : undefined;
+              const stopSeconds = stopSecondsFor(segments, stopIndex);
+              return { ...r, stopSeconds };
+            });
+            wsSend(ws, { event: "done", payload: enriched });
             ws.close();
           })
           .catch((err) => {
-            try { ws.send(JSON.stringify({ event: "error", payload: String(err) })); } catch (_) {}
+            wsSend(ws, { event: "error", payload: String(err) });
             ws.close();
           });
       }
     } catch (err) {
-      try { ws.send(JSON.stringify({ event: "error", payload: String(err) })); } catch (_) {}
+      wsSend(ws, { event: "error", payload: String(err) });
     }
   },
   close: (ws) => {
