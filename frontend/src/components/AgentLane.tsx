@@ -1,5 +1,6 @@
 import React from "react";
 import Tooltip from "./Tooltip";
+import { formatSeconds } from "../utils/formatting";
 
 type Decision = "CONTINUE" | "QUIT1" | "QUIT2";
 
@@ -14,11 +15,6 @@ type Props = {
   onSelect?: () => void;
 };
 export default function AgentLane({ agentName, blocks, blockDetails, isDead, segmentCount = 0, watchSeconds = 0, videoDurationSeconds = 0, onSelect }: Props) {
-
-  function formatSeconds(s: number) {
-    if (!Number.isFinite(s) || s <= 0) return "0.00s";
-    return `${s.toFixed(2)}s`;
-  }
 
   // Show a CLI-like final status when agent is stopped, otherwise show current watch time.
   const statusText = isDead

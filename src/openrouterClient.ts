@@ -23,6 +23,34 @@ export type ChatMessage = {
       >;
 };
 
+// SSE stream types for OpenRouter responses
+type StreamToolCallFunction = {
+  name?: string;
+  arguments?: string;
+};
+
+type StreamToolCallDelta = {
+  index?: number;
+  id?: string;
+  name?: string;
+  function?: StreamToolCallFunction;
+};
+
+type StreamDelta = {
+  content?: string;
+  tool_calls?: StreamToolCallDelta[];
+  function_call?: unknown;
+};
+
+type StreamChoice = {
+  delta?: StreamDelta;
+  finish_reason?: string;
+};
+
+type StreamChunk = {
+  choices?: StreamChoice[];
+};
+
 function messagesIncludeImage(messages: ChatMessage[]) {
   for (const message of messages) {
     if (!Array.isArray(message.content)) continue;
@@ -200,31 +228,23 @@ export class OpenRouterClient {
 
             options.callbacks?.onEvent?.(parsed);
 
-            const choice =
-              typeof parsed === "object" && parsed !== null && Array.isArray((parsed as { choices?: unknown }).choices)
-                ? (parsed as { choices: Array<{ delta?: unknown; finish_reason?: unknown }> }).choices[0]
-                : undefined;
-
-            const delta =
-              choice && typeof choice.delta === "object" && choice.delta !== null
-                ? (choice.delta as { content?: unknown; tool_calls?: Array<unknown>; function_call?: unknown })
-                : undefined;
+            const chunk = parsed as StreamChunk | undefined;
+            const choice = chunk?.choices?.[0];
+            const delta = choice?.delta;
 
             const contentDelta = typeof delta?.content === "string" ? delta.content : undefined;
             if (contentDelta) {
               options.callbacks?.onTextDelta?.(contentDelta, parsed);
             }
 
-            const toolCalls = (delta as any)?.tool_calls ?? [];
-            for (const toolCall of toolCalls as any[]) {
-              const toolCallObj = typeof toolCall === "object" && toolCall !== null ? (toolCall as Record<string, unknown>) : undefined;
-              const functionObj = toolCallObj && typeof toolCallObj.function === "object" ? (toolCallObj.function as Record<string, unknown>) : undefined;
-              const idx = typeof toolCallObj?.index === "number" ? (toolCallObj.index as number) : 0;
-              const chunkArgs = typeof functionObj?.arguments === "string" ? (functionObj.arguments as string) : "";
-              const chunkName = typeof functionObj?.name === "string" ? (functionObj.name as string) : typeof toolCallObj?.name === "string" ? (toolCallObj.name as string) : undefined;
+            const toolCalls: StreamToolCallDelta[] = delta?.tool_calls ?? [];
+            for (const toolCall of toolCalls) {
+              const idx = toolCall.index ?? 0;
+              const chunkArgs = toolCall.function?.arguments ?? "";
+              const chunkName = toolCall.function?.name ?? toolCall.name;
               const prev = partialToolCalls[idx] ?? { args: "", emitted: false };
               const merged = {
-                id: (typeof toolCallObj?.id === "string" ? (toolCallObj.id as string) : undefined) ?? prev.id,
+                id: toolCall.id ?? prev.id,
                 name: chunkName ?? prev.name,
                 args: prev.args + chunkArgs,
                 emitted: prev.emitted,
@@ -251,7 +271,7 @@ export class OpenRouterClient {
                 }
               }
 
-              const name = toolCall.function?.name as string | undefined;
+              const name = toolCall.function?.name;
               if (!name) continue;
               options.callbacks?.onFunctionCall?.({ id: toolCall.id, callId: toolCall.id, name, arguments: toolCall.function?.arguments ?? "", raw: parsed });
             }
@@ -263,7 +283,7 @@ export class OpenRouterClient {
             }
 
             if (finishReason === "tool_calls") {
-              const args = (toolCalls as any[]).map((t) => (t as any).function?.arguments ?? "").join("");
+              const args = toolCalls.map((t) => t.function?.arguments ?? "").join("");
               options.callbacks?.onArgumentsDone?.(args);
             }
           }
@@ -276,7 +296,7 @@ export class OpenRouterClient {
         const isAbort =
           (err instanceof Error && (err.name === "AbortError" || err.message?.toLowerCase().includes("aborted"))) ||
           options.signal?.aborted === true;
-        if (isAbort) throw err as any;
+        if (isAbort) throw err;
 
         // Treat other errors (network, TLS, stream errors) as retryable and try next model
         options.callbacks?.onModelSelected?.(model, attempt + 1, undefined);
