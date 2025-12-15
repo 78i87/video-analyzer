@@ -4,15 +4,90 @@ import { resolve } from "node:path";
 import { EventEmitter } from "node:events";
 
 import { loadConfig } from "./config";
-import { segmentVideo } from "./videoSegmenter";
+import { segmentVideo, type Segment } from "./videoSegmenter";
 import { OpenRouterClient } from "./openrouterClient";
 import { runAgent, viewerTools, type AgentPersona } from "./agentRunner";
 import { logger } from "./logger";
+
+// WebSocket message types
+type WebSocketStartMessage = {
+  type: "START_SIMULATION";
+  agentCount?: number;
+};
+
+type WebSocketMessage = WebSocketStartMessage | { type: string };
+
+// Raw WebSocket message wrapper (some clients send { data: ... })
+type RawWebSocketMessage =
+  | string
+  | ArrayBuffer
+  | Uint8Array
+  | { data?: string | ArrayBuffer | object; type?: string }
+  | { type: string };
+
+// File upload type (Bun's File has these properties)
+interface UploadedFile {
+  name?: string;
+  size?: number;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+// Helper to extract typed message from raw WebSocket data
+function parseWebSocketMessage(message: unknown): WebSocketMessage | undefined {
+  // Convert to text if needed
+  let text = "";
+  if (typeof message === "string") {
+    text = message;
+  } else if (message instanceof ArrayBuffer) {
+    text = new TextDecoder().decode(new Uint8Array(message));
+  } else if (ArrayBuffer.isView(message)) {
+    text = new TextDecoder().decode(message as Uint8Array);
+  } else if (message && typeof message === "object") {
+    const obj = message as Record<string, unknown>;
+    // Handle wrapped messages like { data: "..." } or { data: {...} }
+    if (typeof obj.data === "string") {
+      text = obj.data;
+    } else if (obj.data instanceof ArrayBuffer) {
+      text = new TextDecoder().decode(new Uint8Array(obj.data));
+    } else if (typeof obj.type === "string") {
+      // Already a typed message object
+      return message as WebSocketMessage;
+    } else if (obj.data && typeof obj.data === "object" && typeof (obj.data as Record<string, unknown>).type === "string") {
+      return obj.data as WebSocketMessage;
+    }
+  }
+
+  // Try to parse JSON from text
+  if (text) {
+    const trimmed = text.trim();
+    // Ignore '[object Object]' strings
+    if (/^\[object\s+/.test(trimmed)) return undefined;
+    if (trimmed[0] === "{" || trimmed[0] === "[") {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === "object" && typeof parsed.type === "string") {
+          return parsed as WebSocketMessage;
+        }
+      } catch {
+        return undefined;
+      }
+    }
+  }
+
+  return undefined;
+}
 
 const UPLOADS_DIR = resolve("./uploads");
 const UPLOAD_PATH = resolve(UPLOADS_DIR, "temp.mp4");
 
 mkdirSync(UPLOADS_DIR, { recursive: true });
+
+function stopSecondsFor(segments: Segment[], stopSegmentIndex: number | undefined) {
+  if (segments.length === 0) return 0;
+  if (typeof stopSegmentIndex !== "number") return segments[segments.length - 1]!.end;
+  const clampedIndex = Math.max(0, Math.min(stopSegmentIndex, segments.length - 1));
+  return segments[clampedIndex]!.end;
+}
 
 const app = new Elysia();
 
@@ -44,11 +119,10 @@ app.post("/api/upload", async ({ request, set }) => {
     }
 
     // log file metadata when available
-    try {
-      const name = (file as any).name ?? "(unknown)";
-      const size = typeof (file as any).size === "number" ? (file as any).size : undefined;
-      logger.info(`/api/upload: receiving file name=${name} size=${size ?? "unknown"}`);
-    } catch (_) {}
+    const uploadedFile = file as UploadedFile;
+    const name = uploadedFile.name ?? "(unknown)";
+    const size = uploadedFile.size;
+    logger.info(`/api/upload: receiving file name=${name} size=${size ?? "unknown"}`);
 
     let buffer: ArrayBuffer;
     try {
@@ -82,57 +156,11 @@ app.ws("/ws", {
   },
   message: async (ws, message) => {
     try {
-      let text = "";
-      if (typeof message === "string") {
-        text = message;
-      } else if (message instanceof ArrayBuffer) {
-        text = new TextDecoder().decode(new Uint8Array(message));
-      } else if (ArrayBuffer.isView(message)) {
-        text = new TextDecoder().decode(message as Uint8Array);
-      } else if (message && typeof (message as any).data === "string") {
-        text = (message as any).data;
-      } else if (message && (message as any).data instanceof ArrayBuffer) {
-        text = new TextDecoder().decode(new Uint8Array((message as any).data));
-      } else if (message !== undefined && message !== null) {
-        try {
-          text = String(message);
-        } catch (_err) {
-          text = "";
-        }
-      }
+      const msg = parseWebSocketMessage(message);
+      if (!msg) return;
 
-      let msg: any = undefined;
-      if (text) {
-        const t = text.trim();
-        const first = t[0];
-        // ignore common '[object Object]' string produced by naive string coercion
-        if (/^\[object\s+/.test(t)) {
-          msg = undefined;
-        } else if (first === "{" || first === "[") {
-          try {
-            msg = JSON.parse(t);
-          } catch (parseErr) {
-            try { ws.send(JSON.stringify({ event: "error", payload: `WS JSON parse error: ${String(parseErr)} -- ${t.slice(0,200)}` })); } catch (_) {}
-            msg = undefined;
-          }
-        } else {
-          // text isn't JSON; leave msg undefined and attempt to use original object below
-          msg = undefined;
-        }
-      }
-
-      // If the incoming `message` was already an object, prefer that over text parsing
-      if (!msg && message && typeof message === "object") {
-        if ((message as any).type) {
-          msg = message as any;
-        } else if ((message as any).data && typeof (message as any).data === "object") {
-          msg = (message as any).data;
-        } else {
-          // fallback: use the whole object
-          msg = message as any;
-        }
-      }
-      if (msg?.type === "START_SIMULATION") {
+      if (msg.type === "START_SIMULATION") {
+        const startMsg = msg as WebSocketStartMessage;
         let config;
         try {
           config = loadConfig();
@@ -142,7 +170,7 @@ app.ws("/ws", {
         }
 
         // allow client to override agent count or other knobs
-        const agentCount = typeof msg.agentCount === "number" ? msg.agentCount : config.agentCount;
+        const agentCount = typeof startMsg.agentCount === "number" ? startMsg.agentCount : config.agentCount;
 
         // prepare segments from the uploaded file
         const segments = await segmentVideo(UPLOAD_PATH, {
@@ -178,8 +206,7 @@ app.ws("/ws", {
           try {
             // augment stop payload with stopSeconds computed from segments
             const stopIndex = (payload && typeof payload.stopSegmentIndex === "number") ? payload.stopSegmentIndex : undefined;
-            const stopSeconds = stopIndex === undefined ? (segments.length === 0 ? 0 : segments[segments.length - 1]!.end) :
-              Math.max(0, Math.min(stopIndex, segments.length - 1)) >= 0 ? segments[Math.max(0, Math.min(stopIndex, segments.length - 1))]!.end : 0;
+            const stopSeconds = stopSecondsFor(segments, stopIndex);
             const out = { ...(payload ?? {}), stopSeconds };
             ws.send(JSON.stringify({ event: "stop", payload: out }));
           } catch (_) {}
@@ -206,8 +233,7 @@ app.ws("/ws", {
               // augment final results with stopSeconds for frontend convenience
               const enriched = results.map((r) => {
                 const stopIndex = typeof r.stopSegmentIndex === "number" ? r.stopSegmentIndex : undefined;
-                const stopSeconds = stopIndex === undefined ? (segments.length === 0 ? 0 : segments[segments.length - 1]!.end) :
-                  Math.max(0, Math.min(stopIndex, segments.length - 1)) >= 0 ? segments[Math.max(0, Math.min(stopIndex, segments.length - 1))]!.end : 0;
+                const stopSeconds = stopSecondsFor(segments, stopIndex);
                 return { ...r, stopSeconds };
               });
               ws.send(JSON.stringify({ event: "done", payload: enriched }));
@@ -238,4 +264,4 @@ try {
   throw err;
 }
 
-export default app;
+export { app };

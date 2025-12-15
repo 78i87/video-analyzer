@@ -2,6 +2,7 @@ import * as readline from "node:readline";
 import type { Segment } from "./videoSegmenter";
 import type { AgentState, AgentToolName, DoubleQuitDecision } from "./agentRunner";
 import type { SimulationSummary } from "./simulationSummary";
+import { formatSeconds } from "./utils/formatting";
 
 export type AgentSegmentUpdate = {
   agentId: string;
@@ -17,11 +18,6 @@ type AgentRowState = {
   status: "watching" | "stopped" | "done";
   stopSegmentIndex?: number;
 };
-
-function formatSeconds(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0.00s";
-  return `${seconds.toFixed(2)}s`;
-}
 
 function makeBar(progress: number, width = 22) {
   const clamped = Math.max(0, Math.min(1, progress));

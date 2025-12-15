@@ -174,6 +174,9 @@ dist
 # Cursor
 .cursor/
 
+# Local agent config
+.claude/
+
 # Finder (MacOS) folder config
 .DS_Store
 ._*
@@ -181,3 +184,7 @@ dist
 # Generated artifacts
 data/
 *.mp4
+
+# Lockfiles (repo uses Bun)
+package-lock.json
+**/package-lock.json

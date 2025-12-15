@@ -8,6 +8,45 @@ import AgentDetailsPane from "./components/AgentDetailsPane";
 
 type Decision = "CONTINUE" | "QUIT1" | "QUIT2";
 
+// WebSocket event types from server
+type SegmentsPreparedPayload = {
+  count: number;
+  videoDurationSeconds: number;
+};
+
+type DecisionPayload = {
+  agentId: string;
+  segment: { index: number };
+  tool: "keep_playing" | "quit_video";
+  decision: "continue" | "stop";
+  state: { stopped: boolean };
+  decision_reason?: string | null;
+  subconscious_thought?: string | null;
+  curiosity_level?: number | null;
+  raw_assistant_text?: string | null;
+  raw_function_args?: string | null;
+  model_used?: string | null;
+};
+
+type StopPayload = {
+  agentId: string;
+  stopSegmentIndex: number;
+  stopSeconds?: number;
+  state: { stopped: boolean };
+};
+
+type DoneResult = {
+  agentId: string;
+  stopSegmentIndex?: number;
+  stopSeconds?: number;
+};
+
+type UploadResponse = {
+  ok: boolean;
+  error?: string;
+  path?: string;
+};
+
 export default function App() {
   const [agentCount, setAgentCount] = useState<number>(5);
   const [agents, setAgents] = useState<Decision[][]>([]);
@@ -58,10 +97,10 @@ export default function App() {
         try {
           const res = await fetch("/api/upload", { method: "POST", body: fd });
           const text = await res.text();
-          let json: any;
+          let json: UploadResponse | null;
           try {
             json = text ? JSON.parse(text) : null;
-          } catch (err) {
+          } catch {
             appendLog(`Upload response not JSON: ${text.slice(0, 200)}`);
             setRunning(false);
             return;
@@ -91,30 +130,31 @@ export default function App() {
 
     ws.onmessage = (ev) => {
       try {
-        const msg = JSON.parse(ev.data);
-        const { event, payload } = msg as { event: string; payload: any };
+        const msg = JSON.parse(ev.data) as { event: string; payload: unknown };
+        const { event, payload } = msg;
         if (event === "segmentsPrepared") {
-          setTotalSegments(payload.count ?? 0);
-          setVideoDurationSeconds(payload.videoDurationSeconds ?? 0);
-          appendLog(`Segments prepared: ${payload.count}`);
+          const p = payload as SegmentsPreparedPayload;
+          setTotalSegments(p.count ?? 0);
+          setVideoDurationSeconds(p.videoDurationSeconds ?? 0);
+          appendLog(`Segments prepared: ${p.count}`);
         } else if (event === "decision") {
-          const { agentId, segment, tool, decision, state, decision_reason } = payload;
+          const p = payload as DecisionPayload;
+          const { agentId, segment, tool, decision, decision_reason } = p;
           // debug: log decision payload fields used for tooltips
-          // includes optional fields that may be present on payload
           console.debug("WS decision payload:", {
             agentId,
             segment,
             tool,
             decision,
             decision_reason,
-            subconscious_thought: payload?.subconscious_thought,
-            curiosity_level: payload?.curiosity_level,
+            subconscious_thought: p.subconscious_thought,
+            curiosity_level: p.curiosity_level,
           });
-          let subconscious: string | null = payload?.subconscious_thought ?? null;
-          let curiosity: number | null = typeof payload?.curiosity_level === "number" ? payload.curiosity_level : null;
-          const rawArgs: string | null = payload?.raw_function_args ?? null;
-          const rawText: string | null = payload?.raw_assistant_text ?? null;
-          const modelUsed: string | null = payload?.model_used ?? payload?.modelUsed ?? null;
+          let subconscious: string | null = p.subconscious_thought ?? null;
+          let curiosity: number | null = typeof p.curiosity_level === "number" ? p.curiosity_level : null;
+          const rawArgs: string | null = p.raw_function_args ?? null;
+          const rawText: string | null = p.raw_assistant_text ?? null;
+          const modelUsed: string | null = p.model_used ?? null;
 
           // Try to parse structured fields from raw function args if primary fields are missing
           if ((!subconscious || subconscious === "") && rawArgs) {
@@ -165,7 +205,7 @@ export default function App() {
             appendLog(`${agentId}: ${tool} -> ${decision} (segment=${segment?.index})`);
           }
         } else if (event === "stop") {
-          const { agentId, stopSegmentIndex, stopSeconds, state } = payload;
+          const { agentId, stopSegmentIndex, stopSeconds } = payload as StopPayload;
           const idx = Number(agentId.split("-")[1]) - 1;
           if (idx >= 0 && idx < a) {
             setDead((prev) => {
@@ -187,7 +227,7 @@ export default function App() {
           appendLog(`Server error: ${String(payload)}`);
         } else if (event === "done") {
           // server sends enriched results with `stopSeconds` for each agent
-          const results: { agentId: string; stopSegmentIndex?: number; stopSeconds?: number }[] = payload;
+          const results = payload as DoneResult[];
           setFinalWatchSeconds((prev) => {
             const copy = [...prev];
             for (let i = 0; i < a; i++) {

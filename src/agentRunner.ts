@@ -5,6 +5,18 @@ import { logger } from "./logger";
 import { Buffer } from "node:buffer";
 import type { EventEmitter } from "node:events";
 
+// Parsed function argument types for tool calls
+type KeepPlayingArgs = {
+  subconscious_thought?: string;
+  curiosity_level?: number;
+};
+
+type QuitVideoArgs = {
+  reason_for_quitting?: string;
+};
+
+type ParsedFunctionArgs = KeepPlayingArgs & QuitVideoArgs;
+
 const VIRAL_ANALYSIS_PROMPT = `
 You are the "Reptilian Brain" of a social media viewer. Your attention span is extremely short. You are addicted to dopamine.
 
@@ -168,30 +180,7 @@ export const viewerTools: ToolDefinition[] = [
   },
 ];
 
-function findBalancedJson(text: string, start = 0): string | null {
-  for (let i = start; i < text.length; i++) {
-    if (text[i] !== "{") continue;
-    let depth = 0;
-    for (let j = i; j < text.length; j++) {
-      const ch = text[j];
-      if (ch === "{") depth++;
-      else if (ch === "}") depth--;
-      if (depth === 0) {
-        const candidate = text.slice(i, j + 1);
-        try {
-          JSON.parse(candidate);
-          return candidate;
-        } catch {
-          // try next opening brace
-          break;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function extractFunctionArguments(text: string | null | undefined): Record<string, any> {
+function extractFunctionArguments(text: string | null | undefined): ParsedFunctionArgs {
   if (!text) return {};
 
   let cleaned = text.trim();
@@ -235,7 +224,7 @@ function extractFunctionArguments(text: string | null | undefined): Record<strin
 
   // 3. Third attempt: Specific Field Extraction (The "Regex Sweep")
   // This saves us when the model stutters (e.g. "key": "key": "value") or fails to close braces.
-  const result: Record<string, any> = {};
+  const result: ParsedFunctionArgs = {};
 
   // Regex to capture "subconscious_thought": "VALUE"
   // Handles escaped quotes inside the value
@@ -272,6 +261,124 @@ async function readJpegDataUrl(filePath: string): Promise<string> {
   const bytes = await Bun.file(filePath).arrayBuffer();
   const base64 = Buffer.from(bytes).toString("base64");
   return `data:image/jpeg;base64,${base64}`;
+}
+
+// Helper: Build memory context string from short-term memory
+function buildMemoryContext(shortTermMemory: string[]): string {
+  if (shortTermMemory.length === 0) {
+    return "PREVIOUS THOUGHTS: None (Start of video)";
+  }
+  return `FULL VIDEO HISTORY (Context):\n${shortTermMemory
+    .map((thought, index) => `- Second ${index + 1}: ${thought}`)
+    .join("\n")}`;
+}
+
+// Helper: Build chat messages for the API call
+function buildMessages(
+  persona: AgentPersona,
+  memoryContext: string,
+  segmentIndex: number,
+  imageUrl: string,
+  subtitle: string,
+): ChatMessage[] {
+  return [
+    {
+      role: "system" as const,
+      content: `${persona.systemPrompt}\n\n${VIRAL_ANALYSIS_PROMPT}`,
+    },
+    {
+      role: "user" as const,
+      content: [
+        {
+          type: "text" as const,
+          text: `CURRENT CONTEXT:\n${memoryContext}\n\nAnalyze this frame (Second ${segmentIndex + 1}):`,
+        },
+        { type: "image_url" as const, image_url: { url: imageUrl } },
+        ...(subtitle.trim()
+          ? [{ type: "text" as const, text: `Subtitle: ${subtitle.trim()}` }]
+          : []),
+      ],
+    },
+  ];
+}
+
+// Helper: Infer tool from assistant text when API doesn't provide it
+function inferToolFromText(text: string): AgentToolName {
+  const looksLikeQuit =
+    /"quit_video"\b/.test(text) ||
+    /\bquit_video\b/.test(text) ||
+    /reason_for_quitting/.test(text) ||
+    /_for_quitting/.test(text) ||
+    /quit\b/i.test(text);
+
+  const looksLikeKeep =
+    /"keep_playing"\b/.test(text) ||
+    /\bkeep_playing\b/.test(text) ||
+    /subconscious_thought/.test(text) ||
+    /curiosity_level/.test(text);
+
+  if (looksLikeQuit) {
+    return "quit_video";
+  } else if (looksLikeKeep) {
+    return "keep_playing";
+  } else if (text.length > 0 && (text.includes("boring") || text.includes("low stimulation"))) {
+    return "quit_video";
+  }
+  return "keep_playing";
+}
+
+// Helper: Process tool arguments and extract decision details
+type DecisionDetails = {
+  decisionReason: string | null;
+  subconsciousThought: string | null;
+  curiosityLevel: number | null;
+};
+
+function processToolArguments(
+  tool: AgentToolName,
+  argsObj: ParsedFunctionArgs,
+  assistantText: string,
+): DecisionDetails {
+  let decisionReason: string | null = null;
+  let subconsciousThought: string | null = null;
+  let curiosityLevel: number | null = null;
+
+  if (tool === "keep_playing") {
+    if (argsObj.subconscious_thought) {
+      subconsciousThought = String(argsObj.subconscious_thought);
+      // Clean up common "stuttering" artifacts
+      if (subconsciousThought.startsWith('"subconscious_thought":')) {
+        subconsciousThought = subconsciousThought.replace('"subconscious_thought":', "").trim();
+        if (subconsciousThought.startsWith('"')) subconsciousThought = subconsciousThought.slice(1);
+        if (subconsciousThought.endsWith('"')) subconsciousThought = subconsciousThought.slice(0, -1);
+      }
+      decisionReason = subconsciousThought;
+    }
+
+    if (typeof argsObj.curiosity_level !== "undefined") {
+      const num = Number(argsObj.curiosity_level);
+      if (!Number.isNaN(num)) {
+        curiosityLevel = num;
+      }
+    }
+
+    // Fallback: default curiosity level if we have a thought but no level
+    if (subconsciousThought && curiosityLevel === null) {
+      curiosityLevel = 5;
+    }
+  }
+
+  if (tool === "quit_video") {
+    if (argsObj.reason_for_quitting) {
+      decisionReason = String(argsObj.reason_for_quitting);
+    } else if (assistantText.length > 10) {
+      decisionReason = assistantText.replace(/<.*?>/g, "").trim();
+    } else {
+      decisionReason = "Boredom (No specific reason provided)";
+    }
+  }
+
+  return { decisionReason, subconsciousThought, curiosityLevel };
 }
 
 export type AgentRunReporter = {
@@ -314,46 +421,12 @@ export async function runAgent(
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i]!;
     const imageUrl = await readJpegDataUrl(segment.framePath);
-    
-    // Increase tokens to allow for the "thought" argument generation
-    const maxOutputTokens = 1024; 
-
-    // 2. CONSTRUCT CONTEXT STRING
-    // We map the memory to include timestamps so the agent sees the full narrative history.
-    const memoryContext = shortTermMemory.length > 0 
-      ? `FULL VIDEO HISTORY (Context):\n${shortTermMemory
-          .map((thought, index) => `- Second ${index + 1}: ${thought}`)
-          .join("\n")}`
-      : "PREVIOUS THOUGHTS: None (Start of video)";
-
+    const maxOutputTokens = 1024;
     const logModelOutput = deps.logModelOutput ?? false;
-    
-    const input: ChatMessage[] = [
-      {
-        role: "system" as const,
-        // 3. INJECT THE DOPAMINE LADDER PROMPT
-        content: `${persona.systemPrompt}\n\n${VIRAL_ANALYSIS_PROMPT}`
-      },
-      {
-        role: "user" as const,
-        content: [
-          // 4. INJECT THE MEMORY CONTEXT
-          { 
-             type: "text" as const, 
-             text: `CURRENT CONTEXT:\n${memoryContext}\n\nAnalyze this frame (Second ${i + 1}):` 
-          },
-          { type: "image_url" as const, image_url: { url: imageUrl } },
-          ...(segment.subtitle.trim()
-            ? [
-                {
-                  type: "text" as const,
-                  text: `Subtitle: ${segment.subtitle.trim()}`,
-                },
-              ]
-            : []),
-        ],
-      },
-    ];
+
+    // Build context and messages using helper functions
+    const memoryContext = buildMemoryContext(shortTermMemory);
+    const input = buildMessages(persona, memoryContext, i, imageUrl, segment.subtitle);
 
     const controller = new AbortController();
     let tool: AgentToolName | undefined;
@@ -424,99 +497,27 @@ export async function runAgent(
       if (!tool) throw err;
     }
 
-    // Fallback logic for tool detection
+    // Fallback: infer tool from assistant text if API didn't provide it
     if (!tool) {
-      const text = assistantText.trim();
-      
-      // 1. SMARTER REGEX: Look for keys specific to quitting
-      const looksLikeQuit = 
-          /"quit_video"\b/.test(text) || 
-          /\bquit_video\b/.test(text) || 
-          /reason_for_quitting/.test(text) || // <--- CATCHES THE FRAGMENT
-          /_for_quitting/.test(text) ||       // <--- CATCHES THE LOG YOU SAW
-          /quit\b/i.test(text);
-
-      const looksLikeKeep = 
-          /"keep_playing"\b/.test(text) || 
-          /\bkeep_playing\b/.test(text) || 
-          /subconscious_thought/.test(text) ||
-          /curiosity_level/.test(text);
-
-      if (looksLikeQuit) {
-          tool = "quit_video";
-      } else if (looksLikeKeep) {
-          tool = "keep_playing";
-      } else {
-          // 2. SAFETY: If we are confused, don't just play. Check the text sentiment.
-          // If the text is short and negative, default to quit.
-          if (text.length > 0 && (text.includes("boring") || text.includes("low stimulation"))) {
-              tool = "quit_video";
-          } else {
-              tool = "keep_playing";
-          }
-      }
+      tool = inferToolFromText(assistantText.trim());
     }
 
-    // 5. PARSE ARGUMENTS AND UPDATE MEMORY
-    let argsObj: any = {};
-
-    // Strategy: 
-    // 1. Try to parse the official tool arguments first.
-    // 2. If that fails or is empty, try to parse the raw assistant text.
-    // 3. Merge them (preferring tool args).
-
+    // Parse and merge arguments from tool call and assistant text
     const argsFromTool = extractFunctionArguments(accumulatedArgs);
     const argsFromText = extractFunctionArguments(assistantText);
+    const argsObj: ParsedFunctionArgs = { ...argsFromText, ...argsFromTool };
 
-    // Merge: Text extraction fills in gaps if tool extraction failed
-    argsObj = { ...argsFromText, ...argsFromTool };
+    // Process arguments using helper function
+    const details = processToolArguments(tool, argsObj, assistantText);
+    decisionReason = details.decisionReason;
+    subconsciousThought = details.subconsciousThought;
+    curiosityLevel = details.curiosityLevel;
 
-    // --- LOGIC TO MAP EXTRACTED ARGS TO STATE ---
-
-    if (tool === "keep_playing") {
-      // 1. Handle Subconscious Thought
-      if (argsObj.subconscious_thought) {
-        subconsciousThought = String(argsObj.subconscious_thought);
-        
-        // Clean up common "stuttering" artifacts seen in logs
-        // e.g. "subconscious_thought": "I see..." becomes "I see..."
-        if (subconsciousThought.startsWith('"subconscious_thought":')) {
-           subconsciousThought = subconsciousThought.replace('"subconscious_thought":', '').trim();
-           // Remove leading quotes if they were double-captured
-           if (subconsciousThought.startsWith('"')) subconsciousThought = subconsciousThought.slice(1);
-           if (subconsciousThought.endsWith('"')) subconsciousThought = subconsciousThought.slice(0, -1);
-        }
-
-        shortTermMemory.push(subconsciousThought);
-        if (logModelOutput) {
-          logger.info(`[${persona.id}] THOUGHT: ${subconsciousThought}`);
-        }
-        decisionReason = subconsciousThought;
-      }
-
-      // 2. Handle Curiosity Level
-      if (typeof argsObj.curiosity_level !== "undefined") {
-        const num = Number(argsObj.curiosity_level);
-        if (!Number.isNaN(num)) {
-            curiosityLevel = num;
-        }
-      }
-      
-      // Fallback: If we have a thought but no level, default to 5 so we don't break UI
-      if (subconsciousThought && curiosityLevel === null) {
-          curiosityLevel = 5; 
-      }
-    }
-
-    if (tool === "quit_video") {
-      if (argsObj.reason_for_quitting) {
-        decisionReason = String(argsObj.reason_for_quitting);
-      } else if (assistantText.length > 10) {
-        // Fallback: If no structured reason found, use the raw text as the reason
-        // (often models output the reason as plain text when quitting)
-        decisionReason = assistantText.replace(/<.*?>/g, "").trim(); 
-      } else {
-        decisionReason = "Boredom (No specific reason provided)";
+    // Update short-term memory with thought (if keep_playing)
+    if (tool === "keep_playing" && subconsciousThought) {
+      shortTermMemory.push(subconsciousThought);
+      if (logModelOutput) {
+        logger.info(`[${persona.id}] THOUGHT: ${subconsciousThought}`);
       }
     }
 

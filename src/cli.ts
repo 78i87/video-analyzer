@@ -2,11 +2,7 @@
 import { buildSimulation } from "./index";
 import { existsSync } from "node:fs";
 import { resolveVideoPathArg } from "./cliArgs";
-
-function formatSeconds(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0.00s";
-  return `${seconds.toFixed(2)}s`;
-}
+import { formatSeconds } from "./utils/formatting";
 
 async function main() {
   const rawArgs = process.argv.slice(2);
