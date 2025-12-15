@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/cli.ts",
+    "server": "bun run src/server.ts",
     "test": "find tests -name '._*.ts' -type f -delete 2>/dev/null || true; bun test",
     "lint": "find tests -name '._*.ts' -type f -delete 2>/dev/null || true; bun test --filter never"
   },
@@ -14,6 +15,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "elysia": "^1.4.19",
     "zod": "^4.1.13"
   },
   "engines": {

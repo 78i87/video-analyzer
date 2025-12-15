@@ -1,6 +1,7 @@
 import { access } from "node:fs/promises";
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
+import { Buffer } from "node:buffer";
 import { logger } from "./logger";
 
 export type Segment = {
@@ -21,6 +22,12 @@ export type SegmenterConfig = {
   segmentIntervalSeconds: number;
 };
 
+export type VideoInput =
+  | string
+  | { path: string }
+  | { uploadDir: string }
+  | { buffer: ArrayBuffer | ArrayBufferView | Uint8Array | Buffer; tempDir: string; filename?: string };
+
 export class MissingBinaryError extends Error {
   constructor(binaryName: string, envKey: string) {
     super(
@@ -31,6 +38,12 @@ export class MissingBinaryError extends Error {
 }
 
 async function assertExecutable(binary: string, envKey: string) {
+  const looksLikePath = /[\\/]/.test(binary);
+  if (looksLikePath) {
+    await access(binary);
+    return binary;
+  }
+
   const located = await Bun.which(binary);
   if (!located) {
     throw new MissingBinaryError(binary, envKey);
@@ -123,6 +136,60 @@ function parseArgs(value: string | undefined): string[] {
   return matches.map((token) => token.replaceAll(/^"|"$/g, ""));
 }
 
+function toUint8Array(data: ArrayBuffer | ArrayBufferView | Uint8Array | Buffer) {
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) {
+    const view = data as ArrayBufferView;
+    return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  }
+  throw new Error("Unsupported buffer input type");
+}
+
+function firstFileInDir(dir: string) {
+  const entries = readdirSync(dir);
+  for (const name of entries.sort((a, b) => a.localeCompare(b, "en"))) {
+    const full = resolve(dir, name);
+    try {
+      const stat = statSync(full);
+      if (stat.isFile()) return full;
+    } catch (err) {
+      logger.debug(`Skipping entry ${name}: ${String(err)}`);
+    }
+  }
+  throw new Error(`No files found in directory: ${dir}`);
+}
+
+async function resolveVideoInput(input: VideoInput): Promise<string> {
+  if (typeof input === "string") {
+    try {
+      const stat = statSync(input);
+      if (stat.isDirectory()) return firstFileInDir(input);
+    } catch (_) {
+      // fall through to return input as-is; downstream ffmpeg will error if invalid
+    }
+    return input;
+  }
+
+  if ("path" in input) {
+    return resolveVideoInput(input.path);
+  }
+
+  if ("uploadDir" in input) {
+    return firstFileInDir(input.uploadDir);
+  }
+
+  const providedExt = input.filename ? extname(input.filename) : "";
+  const safeExt = providedExt && /^\.[a-zA-Z0-9._-]+$/.test(providedExt) ? providedExt : ".mp4";
+  const base = sanitizePathComponent(basename(input.filename ?? "upload", providedExt)) || "upload";
+  mkdirSync(input.tempDir, { recursive: true });
+  const filePath = resolve(input.tempDir, `${base}${safeExt}`);
+  const bytes = toUint8Array(input.buffer);
+  await Bun.write(filePath, bytes);
+  return filePath;
+}
+
 type TranscriptSegment = { start: number; end: number; text: string };
 
 export function mapTranscriptToWindows(
@@ -203,11 +270,13 @@ async function transcribeWithWhisper(
 }
 
 export async function segmentVideo(
-  inputPath: string,
+  input: VideoInput,
   config: SegmenterConfig,
 ): Promise<Segment[]> {
   await prepareSegmentDirs(config.frameDir, config.audioDir);
   const deps = await validateDependencies(config);
+
+  const inputPath = await resolveVideoInput(input);
 
   const baseName = sanitizePathComponent(
     basename(inputPath, extname(inputPath)) || "video",
