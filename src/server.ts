@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { EventEmitter } from "node:events";
 
 import { loadConfig } from "./config";
-import { segmentVideo } from "./videoSegmenter";
+import { segmentVideo, type Segment } from "./videoSegmenter";
 import { OpenRouterClient } from "./openrouterClient";
 import { runAgent, viewerTools, type AgentPersona } from "./agentRunner";
 import { logger } from "./logger";
@@ -13,6 +13,13 @@ const UPLOADS_DIR = resolve("./uploads");
 const UPLOAD_PATH = resolve(UPLOADS_DIR, "temp.mp4");
 
 mkdirSync(UPLOADS_DIR, { recursive: true });
+
+function stopSecondsFor(segments: Segment[], stopSegmentIndex: number | undefined) {
+  if (segments.length === 0) return 0;
+  if (typeof stopSegmentIndex !== "number") return segments[segments.length - 1]!.end;
+  const clampedIndex = Math.max(0, Math.min(stopSegmentIndex, segments.length - 1));
+  return segments[clampedIndex]!.end;
+}
 
 const app = new Elysia();
 
@@ -178,8 +185,7 @@ app.ws("/ws", {
           try {
             // augment stop payload with stopSeconds computed from segments
             const stopIndex = (payload && typeof payload.stopSegmentIndex === "number") ? payload.stopSegmentIndex : undefined;
-            const stopSeconds = stopIndex === undefined ? (segments.length === 0 ? 0 : segments[segments.length - 1]!.end) :
-              Math.max(0, Math.min(stopIndex, segments.length - 1)) >= 0 ? segments[Math.max(0, Math.min(stopIndex, segments.length - 1))]!.end : 0;
+            const stopSeconds = stopSecondsFor(segments, stopIndex);
             const out = { ...(payload ?? {}), stopSeconds };
             ws.send(JSON.stringify({ event: "stop", payload: out }));
           } catch (_) {}
@@ -206,8 +212,7 @@ app.ws("/ws", {
               // augment final results with stopSeconds for frontend convenience
               const enriched = results.map((r) => {
                 const stopIndex = typeof r.stopSegmentIndex === "number" ? r.stopSegmentIndex : undefined;
-                const stopSeconds = stopIndex === undefined ? (segments.length === 0 ? 0 : segments[segments.length - 1]!.end) :
-                  Math.max(0, Math.min(stopIndex, segments.length - 1)) >= 0 ? segments[Math.max(0, Math.min(stopIndex, segments.length - 1))]!.end : 0;
+                const stopSeconds = stopSecondsFor(segments, stopIndex);
                 return { ...r, stopSeconds };
               });
               ws.send(JSON.stringify({ event: "done", payload: enriched }));
@@ -238,4 +243,4 @@ try {
   throw err;
 }
 
-export default app;
+export { app };

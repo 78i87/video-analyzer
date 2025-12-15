@@ -168,29 +168,6 @@ export const viewerTools: ToolDefinition[] = [
   },
 ];
 
-function findBalancedJson(text: string, start = 0): string | null {
-  for (let i = start; i < text.length; i++) {
-    if (text[i] !== "{") continue;
-    let depth = 0;
-    for (let j = i; j < text.length; j++) {
-      const ch = text[j];
-      if (ch === "{") depth++;
-      else if (ch === "}") depth--;
-      if (depth === 0) {
-        const candidate = text.slice(i, j + 1);
-        try {
-          JSON.parse(candidate);
-          return candidate;
-        } catch {
-          // try next opening brace
-          break;
-        }
-      }
-    }
-  }
-  return null;
-}
-
 function extractFunctionArguments(text: string | null | undefined): Record<string, any> {
   if (!text) return {};
 

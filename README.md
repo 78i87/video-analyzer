@@ -23,27 +23,32 @@ To record each agent's raw model output per segment to a file, set `AGENT_OUTPUT
 
 ## Running Backend and Frontend (development)
 
-- **Backend:** Run the backend server with Bun. From your workspace root (Windows PowerShell):
+To run the web UI locally, start the backend and frontend in two terminals.
 
-```powershell
-bun run .\video-analyzer\src\server.ts
-```
+- **Backend (Elysia, default `PORT=3000`):**
 
-Or, change into the `video-analyzer` directory and run:
-
-```powershell
+```bash
 bun run src/server.ts
 ```
 
-- **Frontend:** In a separate terminal, change to the frontend directory and start the dev server:
+- **Frontend (Vite dev server):**
 
-```powershell
-cd video-analyzer\frontend
+```bash
+cd frontend
+# Vite 7 requires Node >= 20.19 or >= 22.12 (see `frontend/.nvmrc`)
 npm install
 npm run dev
 ```
 
-Run the backend first so the frontend can connect to the API.
+Then open the URL Vite prints (typically `http://localhost:5173`). The frontend proxies `/api/*` and `/ws` to the backend at `http://localhost:3000` (see `frontend/vite.config.ts`), so start the backend first.
+
+If you see an error like `Cannot find module @rollup/rollup-darwin-arm64`, reinstall frontend deps from scratch:
+
+```bash
+cd frontend
+rm -rf node_modules package-lock.json
+npm install
+```
 
 ## Tests
 
