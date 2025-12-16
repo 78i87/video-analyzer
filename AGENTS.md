@@ -2,45 +2,43 @@
 
 ## Project Structure & Module Organization
 
-- `src/`: TypeScript source (ESM).
-  - `src/server.ts`: Elysia HTTP/WebSocket server for web UI.
-  - `src/videoSegmenter.ts`: Frame extraction (ffmpeg) + optional Whisper transcript mapping.
-  - `src/openrouterClient.ts`: OpenRouter streaming + tool-call parsing.
-  - `src/agentRunner.ts`: Agent loop + "double-quit" rule logic.
-- `tests/`: `bun:test` unit tests (`*.test.ts`).
-- `data/`: Generated artifacts (frames/audio); ignored by Git.
-- `frontend/`: React + Vite web UI.
+- `src/`: Bun + TypeScript backend (Elysia HTTP + WebSocket). Entry: `src/server.ts`.
+- `frontend/`: React + Vite UI. Source in `frontend/src/`, build output in `frontend/dist/`.
+- `tests/`: Bun test suite (`*.test.ts`) covering backend logic and helpers.
+- `uploads/`: temporary uploaded video (`temp.mp4`) and related artifacts (do not commit).
+- `data/`: local runtime data/outputs created during analysis (treat as disposable).
+- `env.example`: copy to `.env` for local configuration.
 
 ## Build, Test, and Development Commands
 
-- `bun install`: Install backend dependencies (requires Bun `>=1.1.3`).
-- `cd frontend && bun install`: Install frontend dependencies.
-- `bun run dev`: Start backend and frontend in development mode.
-- `bun run server`: Run backend only.
-- `bun run build`: Build frontend for production.
-- `bun test`: Run the full test suite (also deletes macOS `tests/._*.ts` artifacts).
-- `bun run lint`: Fast sanity check (`bun test --filter never`) to catch type/runtime import errors without running tests.
+- `bun install` and `cd frontend && bun install`: install backend and frontend deps.
+- `cp env.example .env`: create local env file (set `OPENROUTER_API_KEY`).
+- `bun run dev`: run backend (`http://localhost:3000`) and frontend (`http://localhost:5173`) together.
+- `bun run server`: run backend only.
+- `cd frontend && bun run dev`: run frontend only (expects backend on port 3000 for `/api/*` and `/ws` proxy).
+- `bun run build`: build the frontend into `frontend/dist`.
+- `cd frontend && bun run lint`: run ESLint on the UI.
+- `bun test` (or `bun run test`): run tests; the script also removes macOS `tests/._*.ts` metadata files.
 
 ## Coding Style & Naming Conventions
 
-- TypeScript, ESM (`"type": "module"`); prefer `import type` for type-only imports.
-- Match existing style: 2-space indentation, double quotes, semicolons, trailing commas where used.
-- Filenames are `camelCase.ts`; exported types are `PascalCase`, functions are `camelCase`.
+- TypeScript, ESM (`"type": "module"`). Prefer named exports and small, focused modules.
+- Follow existing formatting: 2-space indentation, double quotes, semicolons.
+- Frontend linting uses ESLint (`frontend/eslint.config.js`); keep changes lint-clean.
+- Test files: `tests/<feature>.test.ts`. Keep unit tests deterministic and fast.
 
 ## Testing Guidelines
 
-- Framework: `bun:test` with `describe/it/expect`.
-- Place tests in `tests/` and name them `*.test.ts` (e.g., `tests/videoSegmenter.test.ts`).
-- Keep tests deterministic; avoid hitting the network—stub `fetch` like `tests/openrouterClient.test.ts`.
-
-## Configuration, Data, and External Dependencies
-
-- Copy `env.example` to `.env` and set `OPENROUTER_API_KEY`. Key knobs: `OPENROUTER_MODEL`, `SEGMENT_INTERVAL_SECONDS`, `AGENT_COUNT`, `LOG_MODEL_OUTPUT`.
-- Requires `ffmpeg` and `ffprobe` on `PATH` (override with `FFMPEG_BIN` / `FFMPEG_PROBE_BIN`). Optional: `WHISPER_BIN` + `WHISPER_ARGS`.
-- Don’t commit large media (`*.mp4`) or generated output (`data/`); both are gitignored.
+- Framework: `bun:test` (`describe/it/expect`).
+- Add/adjust tests when changing core logic (e.g., agent rules, segmenting, OpenRouter parsing).
+- Run a targeted test: `bun test --filter <substring>`.
 
 ## Commit & Pull Request Guidelines
 
-- Commit messages follow a short, imperative style (e.g., "Handle …", "Implement …").
-- PRs should include: what/why, how to test (`bun test`, `bun run dev`), and any UI changes (screenshots if applicable).
+- Commits in history are short, imperative subjects (e.g., “Implement…”, “Update…”); occasional `docs:` prefix—use the same style.
+- PRs: include a clear summary, how to test (`bun run dev`, `bun test`), and screenshots for UI changes (`frontend/`).
 
+## Security & Configuration Tips
+
+- Never commit `.env` or API keys. Required: `OPENROUTER_API_KEY`.
+- External tools: `ffmpeg` is expected (`FFMPEG_BIN`); optional transcription via `WHISPER_BIN`/`WHISPER_ARGS`.
