@@ -1,49 +1,54 @@
 # Video Virality Simulator (Bun + TypeScript)
 
-Segments a video, streams segments to 5 OpenRouter LLM agents with tool-calling, enforces a double-quit rule, and prints a terminal retention summary.
+Segments a video, streams segments to OpenRouter LLM agents with tool-calling, enforces a double-quit rule, and displays retention metrics via a web interface.
 
 ## Setup
 
 ```bash
 bun install
+cd frontend && bun install
+cd ..
 cp env.example .env    # fill in OPENROUTER_API_KEY
 ```
 
 ## Running
 
+Start both backend and frontend with a single command:
+
 ```bash
-bun start "/path/to/video.mp4"
+bun run dev
 ```
 
-Bun automatically loads `.env`.
-Segmentation extracts a single JPEG frame every `SEGMENT_INTERVAL_SECONDS` (default: 1). No audio is extracted; if `WHISPER_BIN` is set, the segment `subtitle` field is populated via Whisper JSON output.
-This project sends frames to OpenRouter as `image_url` content parts, so `OPENROUTER_MODEL` must be a vision-capable model.
+This starts:
+- Backend (Elysia) on `http://localhost:3000`
+- Frontend (Vite) on `http://localhost:5173`
 
-To record each agent's raw model output per segment to a file, set `AGENT_OUTPUT_LOG=1` (logs are written as JSONL under `AGENT_OUTPUT_LOG_DIR`, default `data/agent-logs`).
+Open `http://localhost:5173` in your browser.
 
-## Running Backend and Frontend (development)
+### Running Individually
 
-- **Backend:** Run the backend server with Bun. From your workspace root (Windows PowerShell):
+- **Backend only:** `bun run server`
+- **Frontend only:** `cd frontend && bun run dev`
 
-```powershell
-bun run .\video-analyzer\src\server.ts
+Note: Start the backend first if running individually, as the frontend proxies `/api/*` and `/ws` to port 3000.
+
+### Troubleshooting
+
+If you see an error like `Cannot find module @rollup/rollup-darwin-arm64`, reinstall frontend deps:
+
+```bash
+cd frontend
+rm -rf node_modules bun.lockb
+bun install
 ```
 
-Or, change into the `video-analyzer` directory and run:
+## Production Build
 
-```powershell
-bun run src/server.ts
+```bash
+bun run build
 ```
 
-- **Frontend:** In a separate terminal, change to the frontend directory and start the dev server:
-
-```powershell
-cd video-analyzer\frontend
-npm install
-npm run dev
-```
-
-Run the backend first so the frontend can connect to the API.
+This builds the frontend to `frontend/dist`. For production deployment, run `bun run server` and serve `frontend/dist` via nginx/CDN.
 
 ## Tests
 
@@ -55,8 +60,9 @@ bun run test
 
 ## Key files
 
-- `src/config.ts` – type-safe env loader with defaults and dir creation.
-- `src/videoSegmenter.ts` – ffmpeg/whisper dependency checks and segment scaffolding.
-- `src/openrouterClient.ts` – streaming OpenRouter client with SSE tool-call parsing.
-- `src/agentRunner.ts` – double-quit logic and agent placeholders.
-- `tests/logic.test.ts` – double-quit unit coverage.
+- `src/config.ts` - type-safe env loader with defaults and dir creation.
+- `src/server.ts` - Elysia HTTP/WebSocket server.
+- `src/videoSegmenter.ts` - ffmpeg/whisper dependency checks and segment scaffolding.
+- `src/openrouterClient.ts` - streaming OpenRouter client with SSE tool-call parsing.
+- `src/agentRunner.ts` - double-quit logic and agent placeholders.
+- `tests/logic.test.ts` - double-quit unit coverage.

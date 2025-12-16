@@ -3,18 +3,21 @@
 ## Project Structure & Module Organization
 
 - `src/`: TypeScript source (ESM).
-  - `src/cli.ts`: CLI entry (`bun start <videoPath>`).
-  - `src/index.ts`: Orchestration (`buildSimulation`).
+  - `src/server.ts`: Elysia HTTP/WebSocket server for web UI.
   - `src/videoSegmenter.ts`: Frame extraction (ffmpeg) + optional Whisper transcript mapping.
   - `src/openrouterClient.ts`: OpenRouter streaming + tool-call parsing.
-  - `src/agentRunner.ts`: Agent loop + “double-quit” rule logic.
+  - `src/agentRunner.ts`: Agent loop + "double-quit" rule logic.
 - `tests/`: `bun:test` unit tests (`*.test.ts`).
 - `data/`: Generated artifacts (frames/audio); ignored by Git.
+- `frontend/`: React + Vite web UI.
 
 ## Build, Test, and Development Commands
 
-- `bun install`: Install dependencies (requires Bun `>=1.1.3`).
-- `bun start "/path/to/video.mp4"`: Run the simulator locally.
+- `bun install`: Install backend dependencies (requires Bun `>=1.1.3`).
+- `cd frontend && bun install`: Install frontend dependencies.
+- `bun run dev`: Start backend and frontend in development mode.
+- `bun run server`: Run backend only.
+- `bun run build`: Build frontend for production.
 - `bun test`: Run the full test suite (also deletes macOS `tests/._*.ts` artifacts).
 - `bun run lint`: Fast sanity check (`bun test --filter never`) to catch type/runtime import errors without running tests.
 
@@ -38,6 +41,6 @@
 
 ## Commit & Pull Request Guidelines
 
-- Commit messages follow a short, imperative style (e.g., “Handle …”, “Implement …”).
-- PRs should include: what/why, how to run (`bun test`, `bun start …`), and any CLI output changes (paste sample output or screenshots).
+- Commit messages follow a short, imperative style (e.g., "Handle …", "Implement …").
+- PRs should include: what/why, how to test (`bun test`, `bun run dev`), and any UI changes (screenshots if applicable).
 

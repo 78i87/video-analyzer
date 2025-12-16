@@ -1,20 +1,22 @@
 {
   "name": "video-analyzer",
-  "module": "src/index.ts",
+  "module": "src/server.ts",
   "type": "module",
   "scripts": {
-    "start": "bun run src/cli.ts",
+    "dev": "concurrently -k -n backend,frontend -c cyan,magenta \"bun run src/server.ts\" \"cd frontend && bun run dev\"",
+    "server": "bun run src/server.ts",
+    "build": "cd frontend && bun run build",
     "test": "find tests -name '._*.ts' -type f -delete 2>/dev/null || true; bun test",
     "lint": "find tests -name '._*.ts' -type f -delete 2>/dev/null || true; bun test --filter never"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "concurrently": "^9.2.1"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@elysiajs/cors": "^1.1.1",
     "elysia": "^1.4.19",
     "zod": "^4.1.13"
   },
