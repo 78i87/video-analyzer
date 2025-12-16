@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 
 type Props = {
   lines: string[];
@@ -16,7 +16,7 @@ export default function LiveLog({ lines }: Props) {
   return (
     <div className="live-log">
       <pre ref={ref} className="log-pre">
-        {lines.join("\n")}
+        {lines.length > 0 ? lines.join("\n") : ""}
       </pre>
     </div>
   );

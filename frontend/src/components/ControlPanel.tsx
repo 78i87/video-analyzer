@@ -8,10 +8,12 @@ type Props = {
 export default function ControlPanel({ defaultAgents = 5, onStart }: Props) {
   const [agentCount, setAgentCount] = useState<number>(defaultAgents);
   const [file, setFile] = useState<File | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    setIsDragOver(false);
     const f = e.dataTransfer.files?.[0] ?? null;
     if (f) setFile(f);
   }, []);
@@ -23,18 +25,20 @@ export default function ControlPanel({ defaultAgents = 5, onStart }: Props) {
   return (
     <div className="control-panel">
       <label className="label-inline">
-        Number of agents:
+        Agents
         <input
           type="number"
           min={1}
+          max={50}
           value={agentCount}
           onChange={(e) => setAgentCount(Number(e.target.value))}
         />
       </label>
 
       <div
-        className="file-drop"
-        onDragOver={(e) => e.preventDefault()}
+        className={`file-drop ${isDragOver ? 'drag-over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+        onDragLeave={() => setIsDragOver(false)}
         onDrop={onDrop}
         onClick={triggerFileDialog}
         onKeyDown={(e) => {
@@ -46,9 +50,14 @@ export default function ControlPanel({ defaultAgents = 5, onStart }: Props) {
         tabIndex={0}
         role="button"
       >
-        {file ? <div className="file-name">{file.name}</div> : <div>Drag & drop a file here, or click to choose</div>}
+        {file ? (
+          <span className="file-name">{file.name}</span>
+        ) : (
+          <span>Drop video file or click to browse</span>
+        )}
         <input
           type="file"
+          accept="video/*"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           className="hidden-file-input"
           ref={fileInputRef}
@@ -56,7 +65,7 @@ export default function ControlPanel({ defaultAgents = 5, onStart }: Props) {
       </div>
 
       <button className="start-button" onClick={() => onStart({ agentCount, file })}>
-        Start Simulation
+        Start
       </button>
     </div>
   );

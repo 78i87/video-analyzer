@@ -181,3 +181,5 @@ dist
 # Generated artifacts
 data/
 *.mp4
+
+.claude/

@@ -1,4 +1,3 @@
-import React from "react";
 
 type Decision = "CONTINUE" | "QUIT1" | "QUIT2";
 
@@ -11,12 +10,16 @@ type Props = {
   onClose?: () => void;
 };
 
-export default function AgentDetailsPane({ open, agentIndex, segments, blockReasons = [], blockDetails = [], onClose }: Props) {
+export default function AgentDetailsPane({ open, agentIndex, segments, blockDetails = [], onClose }: Props) {
   return (
     <div className={`agent-details-pane ${open ? "open" : ""}`} aria-hidden={!open}>
       <div className="agent-details-header">
-        <button className="close-btn" onClick={onClose} aria-label="Close details">×</button>
         <h3>Agent {agentIndex + 1}</h3>
+        <button className="close-btn" onClick={onClose} aria-label="Close details">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
       </div>
       <div className="agent-details-body">
         {segments.length === 0 ? (
@@ -25,45 +28,45 @@ export default function AgentDetailsPane({ open, agentIndex, segments, blockReas
           <ol className="segment-list">
             {segments.map((s, i) => {
               const det = blockDetails?.[i] ?? {};
+              const isContinue = s === 'CONTINUE';
               return (
-              <li key={i} className="segment-item">
-                <details open>
-                  <summary>
-                    {s === 'CONTINUE' ? (
-                      <span className="seg-icon seg-continue" aria-hidden>
-                        <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                          <circle cx="12" cy="12" r="10" fill="#66bb6a" />
-                          <path d="M7 13l2.5 2.5L17 8" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                        </svg>
+                <li key={i} className="segment-item">
+                  <details open={i === segments.length - 1}>
+                    <summary>
+                      <span className={`seg-icon ${isContinue ? 'seg-continue' : 'seg-quit'}`}>
+                        {isContinue ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" fill="var(--status-continue)" />
+                            <path d="M7 13l2.5 2.5L17 8" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" fill="var(--status-quit2)" />
+                            <path d="M15 9l-6 6M9 9l6 6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
                       </span>
-                    ) : (
-                      <span className="seg-icon seg-quit" aria-hidden>
-                        <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                          <circle cx="12" cy="12" r="10" fill="#ef5350" />
-                          <path d="M15 9l-6 6M9 9l6 6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                        </svg>
+                      <span className="segment-summary-text">
+                        Segment {i + 1} — {isContinue ? 'continue' : 'quit'}
                       </span>
-                    )}
-                    <span className="segment-summary-text">{`Segment ${i + 1} - [${s === 'CONTINUE' ? 'continue' : 'quit'}]`}</span>
-                    {det.model_used ? (
-                      <span className="segment-model">{` ${det.model_used}`}</span>
-                    ) : null}
-                  </summary>
-                  <div className="segment-details">
-                    {s === 'CONTINUE' ? (
-                      <>
-                        <div><strong>subconscious_thought:</strong> {det.subconscious_thought ?? det.raw_function_args ?? det.raw_assistant_text ?? "(none)"}</div>
-                        <div><strong>curiosity_level:</strong> {typeof det.curiosity_level === 'number' ? det.curiosity_level : "(none)"}</div>
-                      </>
-                    ) : (
-                      <>
-                        <div><strong>reason_for_quitting:</strong> {det.decision_reason ?? det.raw_function_args ?? det.raw_assistant_text ?? "(none)"}</div>
-                      </>
-                    )}
-                  </div>
-                </details>
-              </li>
-            )})}
+                      {det.model_used && (
+                        <span className="segment-model">{det.model_used}</span>
+                      )}
+                    </summary>
+                    <div className="segment-details">
+                      {isContinue ? (
+                        <>
+                          <div><strong>Thought:</strong> {det.subconscious_thought ?? det.raw_function_args ?? det.raw_assistant_text ?? "—"}</div>
+                          <div><strong>Curiosity:</strong> {typeof det.curiosity_level === 'number' ? det.curiosity_level : "—"}</div>
+                        </>
+                      ) : (
+                        <div><strong>Reason:</strong> {det.decision_reason ?? det.raw_function_args ?? det.raw_assistant_text ?? "—"}</div>
+                      )}
+                    </div>
+                  </details>
+                </li>
+              );
+            })}
           </ol>
         )}
       </div>

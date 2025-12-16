@@ -1,4 +1,3 @@
-import React from "react";
 
 type Summary = {
   avg: number;
@@ -23,14 +22,32 @@ export default function SimulationSummary({ summary }: Props) {
 
   return (
     <div className="simulation-summary">
-      <h2>Simulation Summary</h2>
+      <h2>Results</h2>
       <div className="summary-stats">
-        <div><strong>Agents:</strong> {summary.count}</div>
-        <div><strong>Average watch:</strong> {formatSeconds(summary.avg)} ({pct.toFixed(1)}%)</div>
-        <div><strong>Min watch:</strong> {formatSeconds(summary.min)}</div>
-        <div><strong>Max watch:</strong> {formatSeconds(summary.max)}</div>
-        <div><strong>Total watched:</strong> {formatSeconds(summary.total)}</div>
-        <div><strong>Video duration:</strong> {formatSeconds(summary.videoDurationSeconds)}</div>
+        <div>
+          <strong>Agents</strong>
+          <span className="value">{summary.count}</span>
+        </div>
+        <div>
+          <strong>Avg Watch</strong>
+          <span className="value">{formatSeconds(summary.avg)} <small>({pct.toFixed(1)}%)</small></span>
+        </div>
+        <div>
+          <strong>Min Watch</strong>
+          <span className="value">{formatSeconds(summary.min)}</span>
+        </div>
+        <div>
+          <strong>Max Watch</strong>
+          <span className="value">{formatSeconds(summary.max)}</span>
+        </div>
+        <div>
+          <strong>Total Watched</strong>
+          <span className="value">{formatSeconds(summary.total)}</span>
+        </div>
+        <div>
+          <strong>Video Duration</strong>
+          <span className="value">{formatSeconds(summary.videoDurationSeconds)}</span>
+        </div>
       </div>
     </div>
   );

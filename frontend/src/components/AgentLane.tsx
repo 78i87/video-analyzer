@@ -1,4 +1,3 @@
-import React from "react";
 import Tooltip from "./Tooltip";
 
 type Decision = "CONTINUE" | "QUIT1" | "QUIT2";
@@ -13,71 +12,58 @@ type Props = {
   videoDurationSeconds?: number;
   onSelect?: () => void;
 };
+
+function formatSeconds(s: number) {
+  if (!Number.isFinite(s) || s <= 0) return "0.00s";
+  return `${s.toFixed(2)}s`;
+}
+
 export default function AgentLane({ agentName, blocks, blockDetails, isDead, segmentCount = 0, watchSeconds = 0, videoDurationSeconds = 0, onSelect }: Props) {
-
-  function formatSeconds(s: number) {
-    if (!Number.isFinite(s) || s <= 0) return "0.00s";
-    return `${s.toFixed(2)}s`;
-  }
-
-  // Show a CLI-like final status when agent is stopped, otherwise show current watch time.
-  const statusText = isDead
-    ? `quit video at ${formatSeconds(watchSeconds)}`
-    : `watched ${formatSeconds(watchSeconds || videoDurationSeconds || segmentCount)}`;
-
-  // current segment index (1-based) and last block color
-  const currentIndex = blocks.length; // 0..N
+  const currentIndex = blocks.length;
   const totalSegments = segmentCount || Math.max(0, blocks.length);
   const lastBlock = blocks.length ? blocks[blocks.length - 1].toLowerCase() : null;
+
+  const statusClass = lastBlock === "continue" ? "continue" : lastBlock === "quit1" ? "quit1" : lastBlock === "quit2" ? "quit2" : "idle";
 
   return (
     <div
       className="agent-lane"
       onClick={() => onSelect?.()}
       onKeyDown={(e) => {
-        if ((e as any).key === "Enter" || (e as any).key === " ") {
-          (e as any).preventDefault();
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
           onSelect?.();
         }
       }}
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
-      style={{ cursor: onSelect ? 'pointer' : undefined }}
     >
-      <div className="agent-name" style={{ color: '#ffffff', fontWeight: 500 }}>
-        <span style={{ color: '#ffffff' }}>{agentName}</span> —
-        <span className="agent-status" style={{ color: '#ffffffff', marginLeft: '6px' }}>
-          {lastBlock ? <span className={`status-icon status-${lastBlock}`} aria-hidden="true" /> : <span className="status-icon" style={{ opacity: 0.2 }} />}
-          <span className="agent-seg" style={{ color: '#ffffff', marginLeft: '6px' }}>{currentIndex}/{totalSegments}</span>
-        </span>
-        <span
-          style={{
-            marginLeft: '8px',
-            color: '#ffffff',
-            fontWeight: 600,
-            backgroundColor: 'rgba(255,255,255,0.0)'
-          }}
-          className="agent-time"
-        >
-          {statusText}
+      <div className="agent-info">
+        <span className={`agent-status-indicator ${statusClass}`} />
+        <span className="agent-name">{agentName}</span>
+        <span className="agent-meta">
+          <span>{currentIndex}/{totalSegments}</span>
+          <span className="divider">/</span>
+          <span className="agent-time">{formatSeconds(watchSeconds || videoDurationSeconds || 0)}</span>
+          {isDead && <span className="divider">/</span>}
+          {isDead && <span>stopped</span>}
         </span>
       </div>
+
       <div className="blocks">
         {blocks.map((b, i) => {
           const det = blockDetails?.[i] ?? {};
           const reason = det.decision_reason ?? det.subconscious_thought ?? (typeof det.curiosity_level === 'number' ? `curiosity ${det.curiosity_level}` : null);
-          const title = reason ? `${b}: ${reason}` : b;
-          const aria = reason ? `${b}: ${reason}` : b;
           return (
             <Tooltip key={i} content={reason}>
               <span
                 className={`block block-${b.toLowerCase()}`}
-                aria-label={aria}
+                aria-label={reason ? `${b}: ${reason}` : b}
               />
             </Tooltip>
           );
         })}
-        {isDead ? <div className="skull">☠️</div> : null}
+        {isDead && <span className="skull">x</span>}
       </div>
     </div>
   );

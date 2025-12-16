@@ -98,7 +98,7 @@ export default function App() {
           setVideoDurationSeconds(payload.videoDurationSeconds ?? 0);
           appendLog(`Segments prepared: ${payload.count}`);
         } else if (event === "decision") {
-          const { agentId, segment, tool, decision, state, decision_reason } = payload;
+          const { agentId, segment, tool, decision, decision_reason } = payload;
           // debug: log decision payload fields used for tooltips
           // includes optional fields that may be present on payload
           console.debug("WS decision payload:", {
@@ -165,7 +165,7 @@ export default function App() {
             appendLog(`${agentId}: ${tool} -> ${decision} (segment=${segment?.index})`);
           }
         } else if (event === "stop") {
-          const { agentId, stopSegmentIndex, stopSeconds, state } = payload;
+          const { agentId, stopSegmentIndex, stopSeconds } = payload;
           const idx = Number(agentId.split("-")[1]) - 1;
           if (idx >= 0 && idx < a) {
             setDead((prev) => {
@@ -226,7 +226,14 @@ export default function App() {
   }, [finalWatchSeconds, videoDurationSeconds, running]);
 
   return (
-    <div id="root">
+    <div className="app">
+      {/* Backdrop for details pane */}
+      <div
+        className={`details-backdrop ${selectedAgent !== null ? 'visible' : ''}`}
+        onClick={() => setSelectedAgent(null)}
+      />
+
+      {/* Agent Details Pane */}
       <AgentDetailsPane
         open={selectedAgent !== null}
         agentIndex={selectedAgent ?? 0}
@@ -234,30 +241,66 @@ export default function App() {
         blockDetails={selectedAgent !== null ? blockDetails[selectedAgent] ?? [] : []}
         onClose={() => setSelectedAgent(null)}
       />
-      <h1>Simulation Visualizer</h1>
+
+      {/* Header */}
+      <header className="app-header">
+        <div className="app-title">
+          <div className="app-title-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+          </div>
+          <h1>Video Virality Simulator</h1>
+        </div>
+        {segmentCount > 0 && (
+          <div className="segment-badge">
+            Segments: <span>{segmentCount}</span>
+          </div>
+        )}
+      </header>
+
+      {/* Control Panel */}
       <ControlPanel defaultAgents={5} onStart={onStart} />
 
-      {/* show how many segments (time steps) have been processed */}
-      <div className="segment-count">Segments: {segmentCount}</div>
+      {/* Agent Visualizer */}
+      <section className="visualizer-section">
+        <h2 className="section-header">Agent Activity</h2>
+        <div className="visualizer">
+          {agents.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 6v6l4 2"/>
+                </svg>
+              </div>
+              <p>Upload a video and start the simulation</p>
+            </div>
+          ) : (
+            agents.map((blocks, i) => (
+              <AgentLane
+                key={i}
+                agentName={`Agent ${i + 1}`}
+                blocks={blocks}
+                blockDetails={blockDetails[i]}
+                isDead={dead[i]}
+                segmentCount={segmentCount}
+                watchSeconds={finalWatchSeconds[i] ?? watchSeconds[i]}
+                videoDurationSeconds={videoDurationSeconds}
+                onSelect={() => setSelectedAgent((prev) => (prev === i ? null : i))}
+              />
+            ))
+          )}
+        </div>
+      </section>
 
-      <div className="visualizer">
-        {agents.map((blocks, i) => (
-          <AgentLane
-            key={i}
-            agentName={`Agent ${i + 1}`}
-            blocks={blocks}
-            blockDetails={blockDetails[i]}
-            isDead={dead[i]}
-            segmentCount={segmentCount}
-            watchSeconds={finalWatchSeconds[i] ?? watchSeconds[i]}
-            videoDurationSeconds={videoDurationSeconds}
-            onSelect={() => setSelectedAgent((prev) => (prev === i ? null : i))}
-          />
-        ))}
-      </div>
+      {/* Live Log */}
+      <section className="log-section">
+        <h2 className="section-header">Activity Log</h2>
+        <LiveLog lines={logs} />
+      </section>
 
-      <h2>Live Log</h2>
-      <LiveLog lines={logs} />
+      {/* Summary */}
       <SimulationSummary summary={summary} />
     </div>
   );
